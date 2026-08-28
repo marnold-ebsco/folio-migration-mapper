@@ -120,6 +120,8 @@ def build_description(subschema, is_required, required_if_used=False):
             full += " pattern: UUID"
         else:
             full += " pattern: " + pattern_val
+    if subschema.get("x-reference-data"):
+        full += "  (reference data)"
     if is_required:
         full = ("Required if used. " if required_if_used else "REQUIRED ") + full
 

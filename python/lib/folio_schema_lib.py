@@ -432,6 +432,9 @@ def type_annotation(subschema, is_required=False, required_if_used=False):
         )
         note += " pattern: " + ("UUID" if pattern_val in uuid_patterns else pattern_val)
 
+    if subschema.get("x-reference-data"):
+        note += "  (reference data)"
+
     if is_required:
         note = ("Required if used. " if required_if_used else "REQUIRED ") + note
 

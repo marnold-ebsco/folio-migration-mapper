@@ -536,6 +536,10 @@ function type_annotation($subschema, $isRequired = false, $requiredIfUsed = fals
         $note .= " pattern: " . (in_array($patternVal, $uuidPatterns) ? "UUID" : $patternVal);
     }
 
+    if (!empty($subschema["x-reference-data"])) {
+        $note .= "  (reference data)";
+    }
+
     if ($isRequired) {
         $note = ($requiredIfUsed ? "Required if used. " : "REQUIRED ") . $note;
     }

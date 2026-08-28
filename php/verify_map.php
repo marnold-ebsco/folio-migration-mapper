@@ -76,6 +76,9 @@ function build_description($subschema, $isRequired) {
             $full .= " pattern: $patternVal";
         }
     }
+    if (!empty($subschema["x-reference-data"])) {
+        $full .= "  (reference data)";
+    }
     if ($isRequired) {
         $full = "REQUIRED $full";
     }

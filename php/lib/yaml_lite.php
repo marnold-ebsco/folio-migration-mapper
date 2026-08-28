@@ -314,11 +314,27 @@ function dereference_local($root, $node, $resolving = []) {
                 break;
             }
         }
+        // FOLIO ERM modules model a "reference data" field (a category
+        // whose allowed values are configurable at runtime, e.g.
+        // agreementStatus) as oneOf[plain scalar, $ref to a Refdata-shaped
+        // lookup schema]. The Refdata branch itself carries no fixed value
+        // list to show, but it's worth flagging that this isn't just free
+        // text.
+        $isReferenceData = false;
+        foreach ($branches as $b) {
+            if (is_array($b) && is_string($b['$ref'] ?? null) && stripos($b['$ref'], "refdata") !== false) {
+                $isReferenceData = true;
+                break;
+            }
+        }
         $merged = is_array($chosen) ? $chosen : [];
         foreach ($node as $k => $v) {
             if ($k !== "oneOf") {
                 $merged[$k] = $v;
             }
+        }
+        if ($isReferenceData) {
+            $merged["x-reference-data"] = true;
         }
         return dereference_local($root, $merged, $resolving);
     }

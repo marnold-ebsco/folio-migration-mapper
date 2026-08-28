@@ -243,10 +243,21 @@ def dereference_local(root, node, resolving=None):
             (b for b in branches if not (isinstance(b, dict) and set(b.keys()) == {"$ref"})),
             branches[0],
         )
+        # FOLIO ERM modules model a "reference data" field (a category whose
+        # allowed values are configurable at runtime, e.g. agreementStatus)
+        # as oneOf[plain scalar, $ref to a Refdata-shaped lookup schema]. The
+        # Refdata branch itself carries no fixed value list to show, but
+        # it's worth flagging that this isn't just free text.
+        is_reference_data = any(
+            isinstance(b, dict) and isinstance(b.get("$ref"), str) and "refdata" in b["$ref"].lower()
+            for b in branches
+        )
         merged = dict(chosen) if isinstance(chosen, dict) else {}
         for k, v in node.items():
             if k != "oneOf":
                 merged[k] = v
+        if is_reference_data:
+            merged["x-reference-data"] = True
         return dereference_local(root, merged, resolving)
 
     ref = node.get("$ref")
