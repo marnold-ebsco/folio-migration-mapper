@@ -53,7 +53,7 @@ leave it unmapped, the rest of that array instance is silently skipped.
 | --- | --- |
 | `--no-text-annotation` | Don't annotate the `.txt` key list with each field's active mapping. Annotations (`fieldname  [legacy_field]`, `fieldname  ["value"]`, `fieldname  [<true>]`) are shown by default. |
 | `--compact` | Remove fields with no active mapping from both the `.txt` key list and the JSON map. Off by default (all fields are included in both). |
-| `--map-template-only` | A separate mode: skips all interactive prompting and writes one full map with every field present and `legacy_field` left as `"Not mapped"`. Ignores `--compact`/`--no-text-annotation` (with a notice), since a map with nothing mapped has nothing to compact or annotate. |
+| `--map-template-only` | A separate mode: skips all interactive prompting and writes one full map with every field present and `legacy_field` left as `"Not mapped"`. Ignores `--compact`/`--no-text-annotation` (with a notice), since a map with nothing mapped has nothing to compact or annotate. Instead, the `.txt` key list annotates each field with its schema shape: `fieldname  type: <type>`, plus `enum: opt1,opt2` if the field is an enum and `pattern: <pattern>` (or `pattern: UUID` for the standard UUID patterns) if it has one. |
 | `--help`, `-h` | Show usage and exit. |
 
 Output goes to a `mapping/` folder alongside the schema file (or the current

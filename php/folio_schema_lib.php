@@ -267,7 +267,41 @@ function mapped_mark_content($row) {
     return "";
 }
 
-function build_key_tree($node, $path, $rowsByField) {
+// The schema-type note shown per field when listing a template-only key
+// list (nothing is ever mapped there, so there's nothing for the usual mark
+// to show -- this describes the field's shape instead). Mirrors the type/
+// enum/pattern formatting used for JSON descriptions, except enum options
+// are comma-delimited here rather than pipe-delimited.
+function type_annotation($subschema) {
+    $typeVal = $subschema["type"] ?? null;
+    if (is_array($typeVal)) {
+        $typeStr = implode(",", $typeVal);
+    } else {
+        $typeStr = $typeVal ? $typeVal : "unknown";
+    }
+    $note = "type: $typeStr";
+
+    $enumVal = $subschema["enum"] ?? null;
+    if ($enumVal) {
+        $enumStr = implode(",", array_map(function ($e) {
+            return is_bool($e) ? ($e ? "true" : "false") : (string)$e;
+        }, $enumVal));
+        $note .= " enum: $enumStr";
+    }
+
+    $patternVal = $subschema["pattern"] ?? null;
+    if ($patternVal) {
+        $uuidPatterns = [
+            '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+            '^[a-f0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$',
+        ];
+        $note .= " pattern: " . (in_array($patternVal, $uuidPatterns) ? "UUID" : $patternVal);
+    }
+
+    return $note;
+}
+
+function build_key_tree($node, $path, $rowsByField, $schemaTypeInfo = false) {
     $tree = [];
     $props = $node["properties"] ?? [];
     ksort($props);
@@ -287,10 +321,11 @@ function build_key_tree($node, $path, $rowsByField) {
         // representative row to check for an active mapping.
         $lookupPath = $isArray ? "{$fullPath}[1]" : $fullPath;
         $content = mapped_mark_content($rowsByField[$lookupPath] ?? null);
+        $typeNote = $schemaTypeInfo ? type_annotation($val) : "";
         if ($isArray && !empty($items["properties"])) {
-            $children = build_key_tree($items, "{$fullPath}[1]", $rowsByField);
+            $children = build_key_tree($items, "{$fullPath}[1]", $rowsByField, $schemaTypeInfo);
         } elseif (!empty($val["properties"])) {
-            $children = build_key_tree($val, $fullPath, $rowsByField);
+            $children = build_key_tree($val, $fullPath, $rowsByField, $schemaTypeInfo);
         } else {
             $children = [];
         }
@@ -303,12 +338,15 @@ function build_key_tree($node, $path, $rowsByField) {
                 }
             }
         }
-        $tree[] = ["key" => $key, "suffix" => $suffix, "content" => $content, "children" => $children, "mapped" => $mapped];
+        $tree[] = [
+            "key" => $key, "suffix" => $suffix, "content" => $content, "typeNote" => $typeNote,
+            "children" => $children, "mapped" => $mapped,
+        ];
     }
     return $tree;
 }
 
-function flatten_key_tree($tree, $depth, $showMarks, $compact) {
+function flatten_key_tree($tree, $depth, $showMarks, $compact, $schemaTypeInfo = false) {
     $lines = [];
     foreach ($tree as $node) {
         if ($compact && !$node["mapped"]) {
@@ -316,8 +354,9 @@ function flatten_key_tree($tree, $depth, $showMarks, $compact) {
         }
         $prefix = str_repeat("  ", $depth) . ($depth > 0 ? "|" : "");
         $mark = ($showMarks && $node["content"] !== "") ? "  [" . $node["content"] . "]" : "";
-        $lines[] = $prefix . $node["key"] . $node["suffix"] . $mark;
-        $lines = array_merge($lines, flatten_key_tree($node["children"], $depth + 1, $showMarks, $compact));
+        $typeSuffix = ($schemaTypeInfo && $node["typeNote"] !== "") ? "  " . $node["typeNote"] : "";
+        $lines[] = $prefix . $node["key"] . $node["suffix"] . $mark . $typeSuffix;
+        $lines = array_merge($lines, flatten_key_tree($node["children"], $depth + 1, $showMarks, $compact, $schemaTypeInfo));
     }
     return $lines;
 }
@@ -327,9 +366,9 @@ function flatten_key_tree($tree, $depth, $showMarks, $compact) {
 // $showMarks and $compact are independent toggles on top of the same data.
 // If $rowsByField is unavailable (e.g. the provided file didn't parse),
 // compact filtering is skipped rather than dropping every field.
-function build_key_lines($node, $rowsByField = null, $showMarks = true, $compact = false) {
-    $tree = build_key_tree($node, "", $rowsByField ?? []);
-    return flatten_key_tree($tree, 0, $showMarks, $compact && $rowsByField !== null);
+function build_key_lines($node, $rowsByField = null, $showMarks = true, $compact = false, $schemaTypeInfo = false) {
+    $tree = build_key_tree($node, "", $rowsByField ?? [], $schemaTypeInfo);
+    return flatten_key_tree($tree, 0, $showMarks, $compact && $rowsByField !== null, $schemaTypeInfo);
 }
 
 // Special case: the mod-user-import "import" request body wraps the actual

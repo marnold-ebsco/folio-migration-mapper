@@ -438,7 +438,7 @@ foreach ($rows as $row) {
 }
 
 $keyListPath = $mappingDir . "/" . $outputStem . ".txt";
-$keyLines = build_key_lines($schema, $rowsByField, $markMapped, $compact);
+$keyLines = build_key_lines($schema, $rowsByField, $markMapped, $compact, $emptyMap);
 file_put_contents($keyListPath, implode("\n", $keyLines) . "\n");
 
 // --compact drops fields with no active mapping from the JSON map too.

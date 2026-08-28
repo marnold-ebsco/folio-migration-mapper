@@ -210,7 +210,36 @@ def mapped_mark_content(row):
     return ""
 
 
-def _build_key_tree(node, path, rows_by_field):
+# The schema-type note shown per field when listing a template-only key
+# list (nothing is ever mapped there, so there's nothing for the usual mark
+# to show -- this describes the field's shape instead). Mirrors the type/
+# enum/pattern formatting used for JSON descriptions, except enum options
+# are comma-delimited here rather than pipe-delimited.
+def type_annotation(subschema):
+    type_val = subschema.get("type")
+    if isinstance(type_val, list):
+        type_str = ",".join(type_val)
+    else:
+        type_str = type_val if type_val else "unknown"
+    note = f"type: {type_str}"
+
+    enum_val = subschema.get("enum")
+    if enum_val:
+        enum_str = ",".join(str(e).lower() if isinstance(e, bool) else str(e) for e in enum_val)
+        note += f" enum: {enum_str}"
+
+    pattern_val = subschema.get("pattern")
+    if pattern_val:
+        uuid_patterns = (
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+            r"^[a-f0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+        )
+        note += " pattern: " + ("UUID" if pattern_val in uuid_patterns else pattern_val)
+
+    return note
+
+
+def _build_key_tree(node, path, rows_by_field, schema_type_info=False):
     tree = []
     for key, val in sorted((node.get("properties") or {}).items()):
         if key == "legacyIdentifier":
@@ -227,26 +256,31 @@ def _build_key_tree(node, path, rows_by_field):
         # representative row to check for an active mapping.
         lookup_path = f"{full_path}[1]" if is_array else full_path
         content = mapped_mark_content(rows_by_field.get(lookup_path))
+        type_note = type_annotation(val) if schema_type_info else ""
         if is_array and items.get("properties"):
-            children = _build_key_tree(items, f"{full_path}[1]", rows_by_field)
+            children = _build_key_tree(items, f"{full_path}[1]", rows_by_field, schema_type_info)
         elif val.get("properties"):
-            children = _build_key_tree(val, full_path, rows_by_field)
+            children = _build_key_tree(val, full_path, rows_by_field, schema_type_info)
         else:
             children = []
         mapped = bool(content) or any(c["mapped"] for c in children)
-        tree.append({"key": key, "suffix": suffix, "content": content, "children": children, "mapped": mapped})
+        tree.append({
+            "key": key, "suffix": suffix, "content": content, "type_note": type_note,
+            "children": children, "mapped": mapped,
+        })
     return tree
 
 
-def _flatten_key_tree(tree, depth, show_marks, compact):
+def _flatten_key_tree(tree, depth, show_marks, compact, schema_type_info=False):
     lines = []
     for node in tree:
         if compact and not node["mapped"]:
             continue
         prefix = ("  " * depth) + ("|" if depth > 0 else "")
         mark = f"  [{node['content']}]" if (show_marks and node["content"]) else ""
-        lines.append(prefix + node["key"] + node["suffix"] + mark)
-        lines.extend(_flatten_key_tree(node["children"], depth + 1, show_marks, compact))
+        type_suffix = f"  {node['type_note']}" if (schema_type_info and node["type_note"]) else ""
+        lines.append(prefix + node["key"] + node["suffix"] + mark + type_suffix)
+        lines.extend(_flatten_key_tree(node["children"], depth + 1, show_marks, compact, schema_type_info))
     return lines
 
 
@@ -255,9 +289,9 @@ def _flatten_key_tree(tree, depth, show_marks, compact):
 # show_marks and compact are independent toggles on top of the same data.
 # If rows_by_field is unavailable (e.g. the provided file didn't parse),
 # compact filtering is skipped rather than dropping every field.
-def build_key_lines(node, rows_by_field=None, show_marks=True, compact=False):
-    tree = _build_key_tree(node, "", rows_by_field or {})
-    return _flatten_key_tree(tree, 0, show_marks, compact and rows_by_field is not None)
+def build_key_lines(node, rows_by_field=None, show_marks=True, compact=False, schema_type_info=False):
+    tree = _build_key_tree(node, "", rows_by_field or {}, schema_type_info)
+    return _flatten_key_tree(tree, 0, show_marks, compact and rows_by_field is not None, schema_type_info)
 
 
 # Special case: the mod-user-import "import" request body wraps the actual

@@ -353,7 +353,7 @@ rows_by_field = {row["folio_field"]: row for row in rows}
 
 key_list_path = os.path.join(mapping_dir, output_stem + ".txt")
 with open(key_list_path, "w") as f:
-    f.write("\n".join(build_key_lines(schema, rows_by_field=rows_by_field, show_marks=mark_mapped, compact=compact)) + "\n")
+    f.write("\n".join(build_key_lines(schema, rows_by_field=rows_by_field, show_marks=mark_mapped, compact=compact, schema_type_info=empty_map)) + "\n")
 
 # --compact drops fields with no active mapping from the JSON map too.
 if compact:
