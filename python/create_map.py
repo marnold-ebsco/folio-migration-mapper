@@ -27,7 +27,7 @@ Options:
   --compact               Remove fields with no active mapping from both the
                           .txt key list and the JSON map. Off by default
                           (all fields are included in both).
-  --empty-map             A separate mode: skips all interactive prompting
+  --map-template-only     A separate mode: skips all interactive prompting
                           and writes one full map with every field present
                           and legacy_field left as "Not mapped". Always
                           produces the same output regardless of
@@ -43,15 +43,15 @@ if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
     sys.exit(0)
 
 mark_mapped = "--no-text-annotation" not in sys.argv[1:]
-empty_map = "--empty-map" in sys.argv[1:]
+empty_map = "--map-template-only" in sys.argv[1:]
 compact = "--compact" in sys.argv[1:]
 
-# --empty-map is its own mode: nothing is ever mapped, so there's nothing
-# for --compact to remove or --no-text-annotation to suppress. Both are
-# ignored (rather than silently accepted as no-op combinations) so the
+# --map-template-only is its own mode: nothing is ever mapped, so there's
+# nothing for --compact to remove or --no-text-annotation to suppress. Both
+# are ignored (rather than silently accepted as no-op combinations) so the
 # switches don't multiply into combinations that produce identical output.
 if empty_map and (compact or not mark_mapped):
-    print("Note: --empty-map ignores --compact and --no-text-annotation.", file=sys.stderr)
+    print("Note: --map-template-only ignores --compact and --no-text-annotation.", file=sys.stderr)
     compact = False
     mark_mapped = True
 
@@ -339,7 +339,7 @@ def build_and_prompt_object(node, path, silent):
             else:
                 prompt_leaf(row, is_required)
 
-# --empty-map skips all interactive prompting: every field is included with
+# --map-template-only skips all interactive prompting: every field is included with
 # legacy_field left as "Not mapped" (reusing the same silent auto-unmap path
 # already used for unused/skipped array instances).
 build_and_prompt_object(schema, "", silent=empty_map)

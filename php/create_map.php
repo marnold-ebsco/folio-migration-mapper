@@ -17,7 +17,7 @@ Options:
   --compact               Remove fields with no active mapping from both the
                           .txt key list and the JSON map. Off by default
                           (all fields are included in both).
-  --empty-map             A separate mode: skips all interactive prompting
+  --map-template-only     A separate mode: skips all interactive prompting
                           and writes one full map with every field present
                           and legacy_field left as "Not mapped". Always
                           produces the same output regardless of
@@ -35,15 +35,15 @@ if (in_array("--help", array_slice($argv, 1)) || in_array("-h", array_slice($arg
 }
 
 $markMapped = !in_array("--no-text-annotation", array_slice($argv, 1));
-$emptyMap = in_array("--empty-map", array_slice($argv, 1));
+$emptyMap = in_array("--map-template-only", array_slice($argv, 1));
 $compact = in_array("--compact", array_slice($argv, 1));
 
-// --empty-map is its own mode: nothing is ever mapped, so there's nothing
-// for --compact to remove or --no-text-annotation to suppress. Both are
-// ignored (rather than silently accepted as no-op combinations) so the
+// --map-template-only is its own mode: nothing is ever mapped, so there's
+// nothing for --compact to remove or --no-text-annotation to suppress. Both
+// are ignored (rather than silently accepted as no-op combinations) so the
 // switches don't multiply into combinations that produce identical output.
 if ($emptyMap && ($compact || !$markMapped)) {
-    fwrite(STDERR, "Note: --empty-map ignores --compact and --no-text-annotation.\n");
+    fwrite(STDERR, "Note: --map-template-only ignores --compact and --no-text-annotation.\n");
     $compact = false;
     $markMapped = true;
 }
@@ -419,7 +419,7 @@ if (!is_dir($mappingDir)) {
 }
 $outputPath = $mappingDir . "/" . $outputStem . "_mapping.json";
 
-// --empty-map skips all interactive prompting: every field is included with
+// --map-template-only skips all interactive prompting: every field is included with
 // legacy_field left as "Not mapped" (reusing the same silent auto-unmap path
 // already used for unused/skipped array instances).
 build_and_prompt_object($schema, "", $emptyMap);
