@@ -502,10 +502,10 @@ function mapped_mark_content($row) {
 
 // The schema-type note shown per field when listing a template-only key
 // list (nothing is ever mapped there, so there's nothing for the usual mark
-// to show -- this describes the field's shape instead). Mirrors the type/
-// enum/pattern formatting used for JSON descriptions, except enum options
-// are comma-delimited here rather than pipe-delimited.
-function type_annotation($subschema) {
+// to show -- this describes the field's shape instead). Mirrors the
+// required/type/enum/pattern/format formatting used for JSON descriptions,
+// except enum options are comma-delimited here rather than pipe-delimited.
+function type_annotation($subschema, $isRequired = false, $requiredIfUsed = false) {
     $typeVal = $subschema["type"] ?? null;
     if (is_array($typeVal)) {
         $typeStr = implode(",", $typeVal);
@@ -522,6 +522,11 @@ function type_annotation($subschema) {
         $note .= " enum: $enumStr";
     }
 
+    $formatVal = $subschema["format"] ?? null;
+    if ($formatVal) {
+        $note .= "  format: $formatVal";
+    }
+
     $patternVal = $subschema["pattern"] ?? null;
     if ($patternVal) {
         $uuidPatterns = [
@@ -531,6 +536,10 @@ function type_annotation($subschema) {
         $note .= " pattern: " . (in_array($patternVal, $uuidPatterns) ? "UUID" : $patternVal);
     }
 
+    if ($isRequired) {
+        $note = ($requiredIfUsed ? "Required if used. " : "REQUIRED ") . $note;
+    }
+
     return $note;
 }
 
@@ -538,6 +547,7 @@ function build_key_tree($node, $path, $rowsByField, $schemaTypeInfo = false) {
     $tree = [];
     $props = $node["properties"] ?? [];
     ksort($props);
+    $nodeRequired = $node["required"] ?? [];
     foreach ($props as $key => $val) {
         if ($key === "legacyIdentifier") {
             $suffix = " (added for f_m_t)";
@@ -554,7 +564,8 @@ function build_key_tree($node, $path, $rowsByField, $schemaTypeInfo = false) {
         // representative row to check for an active mapping.
         $lookupPath = $isArray ? "{$fullPath}[1]" : $fullPath;
         $content = mapped_mark_content($rowsByField[$lookupPath] ?? null);
-        $typeNote = $schemaTypeInfo ? type_annotation($val) : "";
+        $isRequired = in_array($key, $nodeRequired);
+        $typeNote = $schemaTypeInfo ? type_annotation($val, $isRequired, strpos($fullPath, "[") !== false) : "";
         if ($isArray && !empty($items["properties"])) {
             $children = build_key_tree($items, "{$fullPath}[1]", $rowsByField, $schemaTypeInfo);
         } elseif (!empty($val["properties"])) {

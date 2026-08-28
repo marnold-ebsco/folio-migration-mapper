@@ -393,8 +393,12 @@ function build_and_prompt_object($node, $path, $silent) {
 );
 [$schema, $outputDir, $outputStem, $repo] = $loaded;
 
+// Blank stays in the mapping folder itself; a value creates that as a
+// subfolder of mapping, rather than replacing it.
+$subfolder = prompt_with_default("Enter folder to save the maps to (blank for mapping itself): ", "");
+
 if ($repo) {
-    echo "Resolving \$ref pointers against $repo on GitHub...\n";
+    echo "Resolving \$ref pointers against $repo on GitHub...\n\n";
     $resolver = new RefResolver($repo, $HTTP_HEADERS, $KNOWN_SCHEMAS);
     $schema = $resolver->dereference($schema);
 }
@@ -415,7 +419,8 @@ if (!in_array("legacyIdentifier", $schema["required"])) {
     $schema["required"][] = "legacyIdentifier";
 }
 
-$mappingDir = $outputDir === "" ? "mapping" : rtrim($outputDir, "/\\") . "/mapping";
+$mappingSuffix = $subfolder !== "" ? "mapping/$subfolder" : "mapping";
+$mappingDir = $outputDir === "" ? $mappingSuffix : rtrim($outputDir, "/\\") . "/" . $mappingSuffix;
 if (!is_dir($mappingDir)) {
     mkdir($mappingDir, 0777, true);
 }

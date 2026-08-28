@@ -5,6 +5,7 @@ import sys
 
 from lib.folio_schema_lib import (
     prompt_required,
+    prompt_with_default,
     prompt_for_resource,
     RefResolver,
     load_schema,
@@ -147,13 +148,18 @@ def discover_arrays(node, path, seen):
     return seen
 
 
-# This tool only ever asks for two things: the schema, and the map file to
-# verify. Everything else (array instance counts for the master map, etc.)
-# is derived automatically, with no further prompts.
+# This tool only ever asks for the schema, the map file to verify, and
+# where to write the master map/report. Everything else (array instance
+# counts for the master map, etc.) is derived automatically, with no
+# further prompts.
 
 input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
     "Enter path or URL to the schema file: ", load_schema
 )
+
+# Blank stays in the mapping folder itself; a value creates that as a
+# subfolder of mapping, rather than replacing it.
+subfolder = prompt_with_default("Enter folder to save the maps to (blank for mapping itself): ", "")
 
 
 def _read_map_file(path):
@@ -214,7 +220,7 @@ provided_fields = list(provided_field_lines.keys())
 # ---------------------------------------------------------------------------
 
 if repo:
-    print(f"Resolving $ref pointers against {repo} on GitHub...")
+    print(f"Resolving $ref pointers against {repo} on GitHub...\n")
     schema = RefResolver(repo).dereference(schema)
 
 schema = apply_user_import_exception(schema, input_path)
@@ -251,7 +257,7 @@ walk(schema, "")
 # inspection or reuse afterward. Named "..._master..." (rather than
 # gen_map's usual "..._mapping.json") so it can never collide with, and
 # overwrite, the provided map file being verified.
-mapping_dir = os.path.join(output_dir, "mapping")
+mapping_dir = os.path.join(output_dir, "mapping", subfolder) if subfolder else os.path.join(output_dir, "mapping")
 os.makedirs(mapping_dir, exist_ok=True)
 
 # The key list (and, with --compact, the master map itself) reflect what's

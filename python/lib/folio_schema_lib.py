@@ -404,10 +404,10 @@ def mapped_mark_content(row):
 
 # The schema-type note shown per field when listing a template-only key
 # list (nothing is ever mapped there, so there's nothing for the usual mark
-# to show -- this describes the field's shape instead). Mirrors the type/
-# enum/pattern formatting used for JSON descriptions, except enum options
-# are comma-delimited here rather than pipe-delimited.
-def type_annotation(subschema):
+# to show -- this describes the field's shape instead). Mirrors the
+# required/type/enum/pattern/format formatting used for JSON descriptions,
+# except enum options are comma-delimited here rather than pipe-delimited.
+def type_annotation(subschema, is_required=False, required_if_used=False):
     type_val = subschema.get("type")
     if isinstance(type_val, list):
         type_str = ",".join(type_val)
@@ -420,6 +420,10 @@ def type_annotation(subschema):
         enum_str = ",".join(str(e).lower() if isinstance(e, bool) else str(e) for e in enum_val)
         note += f" enum: {enum_str}"
 
+    format_val = subschema.get("format")
+    if format_val:
+        note += f"  format: {format_val}"
+
     pattern_val = subschema.get("pattern")
     if pattern_val:
         uuid_patterns = (
@@ -428,11 +432,15 @@ def type_annotation(subschema):
         )
         note += " pattern: " + ("UUID" if pattern_val in uuid_patterns else pattern_val)
 
+    if is_required:
+        note = ("Required if used. " if required_if_used else "REQUIRED ") + note
+
     return note
 
 
 def _build_key_tree(node, path, rows_by_field, schema_type_info=False):
     tree = []
+    node_required = set(node.get("required") or [])
     for key, val in sorted((node.get("properties") or {}).items()):
         if key == "legacyIdentifier":
             suffix = " (added for f_m_t)"
@@ -448,7 +456,8 @@ def _build_key_tree(node, path, rows_by_field, schema_type_info=False):
         # representative row to check for an active mapping.
         lookup_path = f"{full_path}[1]" if is_array else full_path
         content = mapped_mark_content(rows_by_field.get(lookup_path))
-        type_note = type_annotation(val) if schema_type_info else ""
+        is_required = key in node_required
+        type_note = type_annotation(val, is_required, "[" in full_path) if schema_type_info else ""
         if is_array and items.get("properties"):
             children = _build_key_tree(items, f"{full_path}[1]", rows_by_field, schema_type_info)
         elif val.get("properties"):

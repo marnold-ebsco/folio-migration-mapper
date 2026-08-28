@@ -5,6 +5,7 @@ import sys
 
 from lib.folio_schema_lib import (
     prompt_required,
+    prompt_with_default,
     prompt_for_resource,
     RefResolver,
     load_schema,
@@ -60,12 +61,15 @@ input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
     "Enter path or URL to the schema file: ", load_schema
 )
 
-mapping_dir = os.path.join(output_dir, "mapping")
+# Blank stays in the mapping folder itself; a value creates that as a
+# subfolder of mapping, rather than replacing it.
+subfolder = prompt_with_default("Enter folder to save the maps to (blank for mapping itself): ", "")
+mapping_dir = os.path.join(output_dir, "mapping", subfolder) if subfolder else os.path.join(output_dir, "mapping")
 os.makedirs(mapping_dir, exist_ok=True)
 output_path = os.path.join(mapping_dir, output_stem + "_mapping.json")
 
 if repo:
-    print(f"Resolving $ref pointers against {repo} on GitHub...")
+    print(f"Resolving $ref pointers against {repo} on GitHub...\n")
     schema = RefResolver(repo).dereference(schema)
 
 schema = apply_user_import_exception(schema, input_path)
