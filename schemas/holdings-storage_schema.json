@@ -1,0 +1,422 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "description": "A holdings record",
+  "javaType": "org.folio.rest.jaxrs.model.HoldingsRecord",
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "the unique ID of the holdings record; UUID",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "_version": {
+      "type": "integer",
+      "description": "Record version for optimistic locking"
+    },
+    "sourceId": {
+      "description": "(A reference to) the source of a holdings record",
+      "type": "string",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "hrid": {
+      "type": "string",
+      "description": "the human readable ID, also called eye readable ID. A system-assigned sequential ID which maps to the Instance ID"
+    },
+    "holdingsTypeId": {
+      "type": "string",
+      "description": "unique ID for the type of this holdings record, a UUID",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "formerIds": {
+      "type": "array",
+      "description": "Previous ID(s) assigned to the holdings record",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "instanceId": {
+      "description": "Inventory instances identifier",
+      "type": "string",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "permanentLocationId": {
+      "type": "string",
+      "description": "The permanent shelving location in which an item resides.",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "temporaryLocationId": {
+      "type": "string",
+      "description": "Temporary location is the temporary location, shelving location, or holding which is a physical place where items are stored, or an Online location.",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "effectiveLocationId": {
+      "type": "string",
+      "description": "Effective location is calculated by the system based on the values in the permanent and temporary locationId fields.",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "electronicAccess": {
+      "description": "List of electronic access items",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "Electronic access item",
+        "javaType": "org.folio.rest.jaxrs.model.ElectronicAccessItem",
+        "additionalProperties": false,
+        "properties": {
+          "uri": {
+            "type": "string",
+            "description": "uniform resource identifier (URI) is a string of characters designed for unambiguous identification of resources"
+          },
+          "linkText": {
+            "type": "string",
+            "description": "the value of the MARC tag field 856 2nd indicator, where the values are: no information provided, resource, version of resource, related resource, no display constant generated"
+          },
+          "materialsSpecification": {
+            "type": "string",
+            "description": "materials specified is used to specify to what portion or aspect of the resource the electronic location and access information applies (e.g. a portion or subset of the item is electronic, or a related electronic resource is being linked to the record)"
+          },
+          "publicNote": {
+            "type": "string",
+            "description": "URL public note to be displayed in the discovery"
+          },
+          "relationshipId": {
+            "type": "string",
+            "description": "relationship between the electronic resource at the location identified and the item described in the record as a whole"
+          }
+        },
+        "required": [
+          "uri"
+        ]
+      }
+    },
+    "additionalCallNumbers": {
+      "description": "Additional Call Numbers to track the history of identifiers assigned to an item.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "uniqueItems": true,
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "A call number",
+        "javaType": "org.folio.rest.jaxrs.model.CallNumberComponents",
+        "properties": {
+          "typeId": {
+            "type": "string",
+            "description": "unique ID for the type of call number on a holdings record, a UUID",
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+          },
+          "prefix": {
+            "type": "string",
+            "description": "Prefix of the call number on the holding level."
+          },
+          "callNumber": {
+            "type": "string",
+            "description": "Call Number is an identifier assigned to an item, usually printed on a label attached to the item."
+          },
+          "suffix": {
+            "type": "string",
+            "description": "Suffix of the call number on the holding level."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "callNumber"
+        ]
+      }
+    },
+    "callNumberTypeId": {
+      "type": "string",
+      "description": "unique ID for the type of call number on a holdings record, a UUID",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "callNumberPrefix": {
+      "type": "string",
+      "description": "Prefix of the call number on the holding level."
+    },
+    "callNumber": {
+      "type": "string",
+      "description": "Call Number is an identifier assigned to an item, usually printed on a label attached to the item."
+    },
+    "callNumberSuffix": {
+      "type": "string",
+      "description": "Suffix of the call number on the holding level."
+    },
+    "shelvingTitle": {
+      "type": "string",
+      "description": "Indicates the shelving form of title."
+    },
+    "acquisitionFormat": {
+      "type": "string",
+      "description": "Format of holdings record acquisition"
+    },
+    "acquisitionMethod": {
+      "type": "string",
+      "description": "Method of holdings record acquisition"
+    },
+    "receiptStatus": {
+      "type": "string",
+      "description": "Receipt status (e.g. pending, awaiting receipt, partially received, fully received, receipt not required, and cancelled)"
+    },
+    "administrativeNotes": {
+      "type": "array",
+      "description": "Administrative notes",
+      "minItems": 0,
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Notes about action, copy, binding etc.",
+      "items": {
+        "type": "object",
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "A holdings record note",
+        "javaType": "org.folio.rest.jaxrs.model.HoldingsNote",
+        "additionalProperties": false,
+        "properties": {
+          "holdingsNoteTypeId": {
+            "type": "string",
+            "description": "ID of the type of note",
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+          },
+          "note": {
+            "type": "string",
+            "description": "Text content of the note"
+          },
+          "staffOnly": {
+            "type": "boolean",
+            "description": "If true, determines that the note should not be visible for others than staff",
+            "default": false
+          }
+        }
+      }
+    },
+    "illPolicyId": {
+      "type": "string",
+      "description": "unique ID for an ILL policy, a UUID",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "retentionPolicy": {
+      "type": "string",
+      "description": "Records information regarding how long we have agreed to keep something."
+    },
+    "digitizationPolicy": {
+      "description": "Records information regarding digitization aspects.",
+      "type": "string"
+    },
+    "holdingsStatements": {
+      "description": "Holdings record statements",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "Holdings record statement",
+        "javaType": "org.folio.rest.jaxrs.model.HoldingsStatement",
+        "additionalProperties": false,
+        "properties": {
+          "statement": {
+            "type": "string",
+            "description": "Specifies the exact content to which the library has access, typically for continuing publications."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note attached to a holdings statement"
+          },
+          "staffNote": {
+            "type": "string",
+            "description": "Private note attached to a holdings statement"
+          }
+        }
+      }
+    },
+    "holdingsStatementsForIndexes": {
+      "description": "Holdings record indexes statements",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "Holdings record statement",
+        "javaType": "org.folio.rest.jaxrs.model.HoldingsStatement",
+        "additionalProperties": false,
+        "properties": {
+          "statement": {
+            "type": "string",
+            "description": "Specifies the exact content to which the library has access, typically for continuing publications."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note attached to a holdings statement"
+          },
+          "staffNote": {
+            "type": "string",
+            "description": "Private note attached to a holdings statement"
+          }
+        }
+      }
+    },
+    "holdingsStatementsForSupplements": {
+      "description": "Holdings record supplements statements",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "Holdings record statement",
+        "javaType": "org.folio.rest.jaxrs.model.HoldingsStatement",
+        "additionalProperties": false,
+        "properties": {
+          "statement": {
+            "type": "string",
+            "description": "Specifies the exact content to which the library has access, typically for continuing publications."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note attached to a holdings statement"
+          },
+          "staffNote": {
+            "type": "string",
+            "description": "Private note attached to a holdings statement"
+          }
+        }
+      }
+    },
+    "copyNumber": {
+      "type": "string",
+      "description": "Item/Piece ID (usually barcode) for systems that do not use item records. Ability to designate the copy number if institution chooses to use copy numbers."
+    },
+    "numberOfItems": {
+      "type": "string",
+      "description": "Text (Number)"
+    },
+    "receivingHistory": {
+      "description": "Receiving history of holdings record",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "javaType": "org.folio.rest.jaxrs.model.HoldingsReceivingHistory",
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "displayType": {
+          "type": "string",
+          "description": "Display hint. 1: Display fields separately. 2: Display fields concatenated"
+        },
+        "entries": {
+          "type": "array",
+          "description": "Entries of receiving history",
+          "items": {
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "description": "Receiving history entry of holdings record",
+            "javaType": "org.folio.rest.jaxrs.model.HoldingsReceivingHistoryEntry",
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "publicDisplay": {
+                "type": "boolean",
+                "description": "Defines if the receivingHistory should be visible to the public."
+              },
+              "enumeration": {
+                "type": "string",
+                "description": "This is the volume/issue number (e.g. v.71:no.6-2)"
+              },
+              "chronology": {
+                "type": "string",
+                "description": "Repeated element from Receiving history - Enumeration AND Receiving history - Chronology"
+              }
+            }
+          }
+        }
+      }
+    },
+    "discoverySuppress": {
+      "type": "boolean",
+      "description": "records the fact that the record should not be displayed in a discovery system"
+    },
+    "statisticalCodeIds": {
+      "type": "array",
+      "description": "List of statistical code IDs",
+      "items": {
+        "type": "string",
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "description": "A universally unique identifier (UUID), this is a 128-bit number used to identify a record and is shown in hex with dashes, for example 6312d172-f0cf-40f6-b27d-9fa8feaf332f; the UUID version must be from 1-5; see https://dev.folio.org/guides/uuids/",
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      },
+      "uniqueItems": true
+    },
+    "tags": {
+      "description": "arbitrary tags associated with this holding",
+      "id": "tags",
+      "type": "object",
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "title": "tags",
+      "properties": {
+        "tagList": {
+          "description": "List of tags",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "readonly": true,
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "id": "metadata.schema",
+      "title": "Metadata Schema",
+      "description": "Metadata about creation and changes to records, provided by the server (client should not provide)",
+      "properties": {
+        "createdDate": {
+          "description": "Date and time when the record was created",
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdByUserId": {
+          "description": "ID of the user who created the record (when available)",
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$"
+        },
+        "createdByUsername": {
+          "description": "Username of the user who created the record (when available)",
+          "type": "string"
+        },
+        "updatedDate": {
+          "description": "Date and time when the record was last updated",
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedByUserId": {
+          "description": "ID of the user who last updated the record (when available)",
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$"
+        },
+        "updatedByUsername": {
+          "description": "Username of the user who last updated the record (when available)",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "createdDate"
+      ]
+    }
+  },
+  "required": [
+    "sourceId",
+    "instanceId",
+    "permanentLocationId"
+  ]
+}

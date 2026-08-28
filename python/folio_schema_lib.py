@@ -1,0 +1,281 @@
+import html
+import json
+import os
+import posixpath
+import re
+import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
+
+HTTP_HEADERS = {"User-Agent": "folio-schema-tools"}
+
+
+def prompt_required(prompt_text):
+    try:
+        value = input(prompt_text).strip()
+    except EOFError:
+        value = ""
+    if not value:
+        print("Error: no input provided.", file=sys.stderr)
+        sys.exit(1)
+    return value
+
+# These two schemas are standardized and identical across every FOLIO module,
+# so they're hardcoded rather than looked up.
+KNOWN_SCHEMAS = {
+    "tags.schema": {
+        "type": "object",
+        "description": "arbitrary tags associated with this record",
+        "properties": {
+            "tagList": {
+                "description": "List of tags",
+                "type": "array",
+                "items": {"type": "string"}
+            }
+        },
+        "additionalProperties": False
+    },
+    "metadata.schema": {
+        "type": "object",
+        "readonly": True,
+        "description": "Metadata about creation and changes to records, provided by the server (client should not provide)",
+        "properties": {
+            "createdDate": {"type": "string", "description": "Date and time when the record was created"},
+            "createdByUserId": {"type": "string", "description": "ID of the user who created the record (when available)"},
+            "createdByUsername": {"type": "string", "description": "Username of the user who created the record (when available)"},
+            "updatedDate": {"type": "string", "description": "Date and time when the record was last updated"},
+            "updatedByUserId": {"type": "string", "description": "ID of the user who last updated the record (when available)"},
+            "updatedByUsername": {"type": "string", "description": "Username of the user who last updated the record (when available)"}
+        },
+        "additionalProperties": False
+    }
+}
+
+
+def fetch_json(url):
+    try:
+        req = urllib.request.Request(url, headers=HTTP_HEADERS)
+        with urllib.request.urlopen(req, timeout=15) as f:
+            return json.loads(f.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+class RefResolver:
+    """Resolves $ref pointers in a FOLIO module's schema tree by locating the
+    referenced file anywhere in that module's GitHub repo and inlining it."""
+
+    def __init__(self, repo):
+        self.repo = repo
+        self.tree_paths = None
+        self.file_cache = {}
+
+    def _load_tree(self):
+        if self.tree_paths is not None:
+            return
+        self.tree_paths = []
+        for branch in ("master", "main"):
+            data = fetch_json(f"https://api.github.com/repos/{self.repo}/git/trees/{branch}?recursive=1")
+            if data and data.get("tree"):
+                self.tree_paths = [t["path"] for t in data["tree"] if t.get("type") == "blob"]
+                break
+
+    def _find_path(self, basename):
+        self._load_tree()
+        candidates = [p for p in self.tree_paths if posixpath.basename(p) == basename]
+        if not candidates:
+            return None
+        # prefer paths that live under a "schemas" directory
+        candidates.sort(key=lambda p: 0 if "/schemas/" in p else 1)
+        return candidates[0]
+
+    def fetch_ref(self, ref_value):
+        basename = posixpath.basename(ref_value)
+        if basename in KNOWN_SCHEMAS:
+            return KNOWN_SCHEMAS[basename]
+        if basename in self.file_cache:
+            return self.file_cache[basename]
+        path = self._find_path(basename)
+        if not path:
+            self.file_cache[basename] = None
+            return None
+        resolved = None
+        for branch in ("master", "main"):
+            resolved = fetch_json(f"https://raw.githubusercontent.com/{self.repo}/{branch}/{path}")
+            if resolved is not None:
+                break
+        self.file_cache[basename] = resolved
+        return resolved
+
+    def dereference(self, node, depth=0):
+        if depth > 6:
+            return node
+        if isinstance(node, list):
+            return [self.dereference(v, depth + 1) for v in node]
+        if not isinstance(node, dict):
+            return node
+
+        ref = node.get("$ref")
+        if ref:
+            resolved = self.fetch_ref(ref)
+            if resolved is not None:
+                merged = dict(resolved)
+                for k, v in node.items():
+                    if k != "$ref":
+                        merged[k] = v
+                node = merged
+
+        return {k: self.dereference(v, depth + 1) for k, v in node.items()}
+
+
+def load_schema(input_path):
+    parsed = urlparse(input_path)
+    is_url = parsed.scheme in ("http", "https")
+
+    if not is_url:
+        try:
+            with open(input_path) as f:
+                schema = json.load(f)
+        except OSError:
+            print(f"Error: could not find or read schema file '{input_path}'", file=sys.stderr)
+            sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(f"Error: '{input_path}' is not valid JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+        input_dir, input_filename = os.path.split(input_path)
+        output_stem = os.path.splitext(input_filename)[0].replace("_schema", "")
+        return schema, input_dir, output_stem, None
+
+    try:
+        with urllib.request.urlopen(input_path) as f:
+            raw = f.read().decode("utf-8")
+    except (urllib.error.URLError, ValueError, OSError) as e:
+        print(f"Error: could not fetch URL '{input_path}': {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # FOLIO doc pages are hosted as https://s3.amazonaws.com/foliodocs/api/{repo}/r/{page}.html
+    repo_match = re.search(r"/api/([^/]+)/r/", parsed.path)
+    repo = f"folio-org/{repo_match.group(1)}" if repo_match else None
+
+    anchor = parsed.fragment
+    if anchor:
+        # raml2html doc page (e.g. .../item-storage.html#item_storage_items_post) --
+        # the raw schema JSON for that endpoint's request body is embedded in the
+        # page as a literal <pre><code>{...}</code></pre> block right after the
+        # "<anchor>_request" tab pane.
+        pattern = re.compile(
+            r'id="' + re.escape(anchor) + r'_request".*?<pre><code>(.*?)</code></pre>',
+            re.S
+        )
+        match = pattern.search(raw)
+        if not match:
+            print(f"Error: could not find a schema block for anchor '{anchor}' on the page", file=sys.stderr)
+            sys.exit(1)
+        schema_text = html.unescape(match.group(1))
+        try:
+            schema = json.loads(schema_text)
+        except json.JSONDecodeError as e:
+            print(f"Error: schema block for anchor '{anchor}' is not valid JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+        output_stem = anchor
+    else:
+        try:
+            schema = json.loads(raw)
+        except json.JSONDecodeError as e:
+            print(f"Error: content at '{input_path}' is not valid JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+        output_stem = os.path.splitext(os.path.basename(parsed.path))[0].replace("_schema", "")
+
+    output_stem = output_stem.replace("_post", "")
+
+    return schema, os.getcwd(), output_stem, repo
+
+
+# A field is "actively mapped" if it has a real legacy_field name or a
+# literal value. Returns just the bracket's inner content (no brackets):
+# the legacy_field name as-is, the value in double quotes, or <true>/<false>
+# for a boolean value. Returns "" if the field isn't actively mapped.
+def mapped_mark_content(row):
+    if not row:
+        return ""
+    legacy = row.get("legacy_field", "Not mapped")
+    if legacy and legacy != "Not mapped":
+        return str(legacy)
+    value = row.get("value", "")
+    if value != "" and value is not None:
+        if isinstance(value, bool):
+            return "<" + ("true" if value else "false") + ">"
+        return '"' + str(value) + '"'
+    return ""
+
+
+def _build_key_tree(node, path, rows_by_field):
+    tree = []
+    for key, val in sorted((node.get("properties") or {}).items()):
+        if key == "legacyIdentifier":
+            suffix = " (added for f_m_t)"
+        elif val.get("readonly") or key == "_version":
+            suffix = " (readonly)"
+        else:
+            suffix = ""
+        full_path = f"{path}.{key}" if path else key
+        items = val.get("items") or {}
+        is_array = val.get("type") == "array"
+        # Arrays are prompted per-instance, but the key list only shows the
+        # field's structural position once -- instance 1 is used as the
+        # representative row to check for an active mapping.
+        lookup_path = f"{full_path}[1]" if is_array else full_path
+        content = mapped_mark_content(rows_by_field.get(lookup_path))
+        if is_array and items.get("properties"):
+            children = _build_key_tree(items, f"{full_path}[1]", rows_by_field)
+        elif val.get("properties"):
+            children = _build_key_tree(val, full_path, rows_by_field)
+        else:
+            children = []
+        mapped = bool(content) or any(c["mapped"] for c in children)
+        tree.append({"key": key, "suffix": suffix, "content": content, "children": children, "mapped": mapped})
+    return tree
+
+
+def _flatten_key_tree(tree, depth, show_marks, compact):
+    lines = []
+    for node in tree:
+        if compact and not node["mapped"]:
+            continue
+        prefix = ("  " * depth) + ("|" if depth > 0 else "")
+        mark = f"  [{node['content']}]" if (show_marks and node["content"]) else ""
+        lines.append(prefix + node["key"] + node["suffix"] + mark)
+        lines.extend(_flatten_key_tree(node["children"], depth + 1, show_marks, compact))
+    return lines
+
+
+# rows_by_field drives both the display marks and the --compact filtering,
+# so it's built the same way regardless of whether marks are shown --
+# show_marks and compact are independent toggles on top of the same data.
+# If rows_by_field is unavailable (e.g. the provided file didn't parse),
+# compact filtering is skipped rather than dropping every field.
+def build_key_lines(node, rows_by_field=None, show_marks=True, compact=False):
+    tree = _build_key_tree(node, "", rows_by_field or {})
+    return _flatten_key_tree(tree, 0, show_marks, compact and rows_by_field is not None)
+
+
+# Special case: the mod-user-import "import" request body wraps the actual
+# per-user record in a "users" array alongside unrelated batch-control
+# fields (totalRecords, deactivateMissingUsers, updateOnlyPresentFields,
+# sourceType). For this one schema, map the individual user record instead
+# of the batch wrapper.
+USER_IMPORT_URL = "https://s3.amazonaws.com/foliodocs/api/mod-user-import/r/import.html#user_import_post"
+
+def apply_user_import_exception(schema, input_path):
+    if input_path != USER_IMPORT_URL:
+        return schema
+    users_items = (schema.get("properties") or {}).get("users", {}).get("items")
+    if not users_items:
+        return schema
+    new_schema = dict(users_items)
+    new_props = dict(new_schema.get("properties") or {})
+    for excluded in ("totalRecords", "deactivateMissingUsers", "updateOnlyPresentFields", "sourceType"):
+        new_props.pop(excluded, None)
+    new_schema["properties"] = new_props
+    return new_schema

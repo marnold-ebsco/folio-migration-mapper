@@ -1,0 +1,7 @@
+/mapping/
+/php/mapping/
+/python/mapping/
+*.zip
+__pycache__/
+spareparts/
+scratch.code-workspace
