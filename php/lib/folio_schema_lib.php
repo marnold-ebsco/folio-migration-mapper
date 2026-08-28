@@ -226,11 +226,47 @@ function discover_openapi_yaml_url($repo, $page, $headers) {
     return "https://raw.githubusercontent.com/{$repo}/{$branchFound}/{$candidates[0]}";
 }
 
+// A Redoc operation-permalink fragment, e.g. "#tag/Agreements/operation/postSA"
+// -- the tag is only there for the reader's benefit, since operationId is
+// expected to be unique within a document. Returns the matching
+// operationId, or null if the fragment isn't in this form.
+function match_operation_anchor($fragment) {
+    if (preg_match('#^tag/[^/]+/operation/([^/]+)$#', $fragment, $m)) {
+        return $m[1];
+    }
+    return null;
+}
+
+function is_openapi_fragment($fragment) {
+    return str_starts_with($fragment, "/") || match_operation_anchor($fragment) !== null;
+}
+
+function find_operation_schema($doc, $operationId) {
+    foreach (($doc["paths"] ?? []) as $pathItem) {
+        if (!is_array($pathItem)) {
+            continue;
+        }
+        foreach ($pathItem as $op) {
+            if (!is_array($op) || ($op["operationId"] ?? null) !== $operationId) {
+                continue;
+            }
+            $content = $op["requestBody"]["content"] ?? [];
+            $media = $content["application/json"] ?? (is_array($content) && !empty($content) ? reset($content) : null);
+            if (is_array($media) && isset($media["schema"])) {
+                return $media["schema"];
+            }
+        }
+    }
+    return null;
+}
+
 // A raml2html doc page embeds one request-body schema per endpoint, keyed
 // by an anchor. An OpenAPI/YAML document has no such single embedded block,
-// so a JSON-pointer fragment (e.g. "#/components/schemas/Agreement") is
-// required instead, to say which schema in the document to map -- whether
-// the YAML lives at a URL or a local file path.
+// so either a JSON-pointer fragment (e.g. "#/components/schemas/Agreement")
+// or a Redoc operation-permalink fragment (e.g.
+// "#tag/Agreements/operation/postSA") is required instead, to say which
+// schema in the document to map -- whether the YAML lives at a URL or a
+// local file path.
 function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
     $basePath = explode("#", $inputPath, 2)[0];
     if ($isUrl) {
@@ -253,6 +289,18 @@ function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
     }
 
     $doc = parse_yaml($raw);
+
+    $operationId = match_operation_anchor($fragment);
+    if ($operationId !== null) {
+        $target = find_operation_schema($doc, $operationId);
+        if ($target === null) {
+            fwrite(STDERR, "Error: could not find operation '$operationId' with a JSON request body in '$basePath'\n");
+            exit(1);
+        }
+        $schema = dereference_local($doc, $target);
+        return [$schema, $outputDir, $operationId, null];
+    }
+
     $pointer = "#" . $fragment;
     try {
         $target = resolve_pointer($doc, $pointer);
@@ -273,15 +321,22 @@ function load_schema($inputPath, $headers) {
 
     $ext = strtolower(pathinfo($parsed["path"] ?? "", PATHINFO_EXTENSION));
     $fragment = $parsed["fragment"] ?? "";
-    if (($ext === "yaml" || $ext === "yml") && str_starts_with($fragment, "/")) {
+    if (($ext === "yaml" || $ext === "yml") && is_openapi_fragment($fragment)) {
         return load_openapi_yaml($inputPath, $isUrl, $fragment, $headers);
     }
 
     // A Redoc OpenAPI doc page (as opposed to a raml2html page) given with a
-    // JSON-pointer fragment -- auto-discover the module's bundled YAML and
-    // load the pointed-to schema from that instead of trying to scrape the
-    // (unscrapeable) HTML page itself.
-    if ($isUrl && str_starts_with($fragment, "/") && preg_match('#/api/([^/]+)/s/([^/]+)\.html$#', $parsed["path"] ?? "", $m)) {
+    // JSON-pointer or operation-permalink fragment -- auto-discover the
+    // module's bundled YAML and load the pointed-to schema from that
+    // instead of trying to scrape the (unscrapeable) HTML page itself.
+    if ($isUrl && preg_match('#/api/([^/]+)/s/([^/]+)\.html$#', $parsed["path"] ?? "", $m)) {
+        if (!is_openapi_fragment($fragment)) {
+            fwrite(STDERR, "Error: this looks like a Redoc/OpenAPI doc page, which doesn't embed a " .
+                "scrapeable schema block. Give either a JSON-pointer fragment " .
+                "(e.g. '#/components/schemas/Agreement') or a Redoc operation " .
+                "permalink fragment (e.g. '#tag/Agreements/operation/postSA').\n");
+            exit(1);
+        }
         $repo = "folio-org/" . $m[1];
         $page = $m[2];
         $yamlUrl = discover_openapi_yaml_url($repo, $page, $headers);

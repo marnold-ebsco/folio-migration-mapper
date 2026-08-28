@@ -45,21 +45,27 @@ When prompted for the schema, you can give:
     different page layout
   - **View 3** — rare; not currently supported
   - **View 4** — Redoc-rendered OpenAPI, `/s/{page}.html` (see below)
-- An OpenAPI/YAML document (View 4) — either the doc page URL itself with a
-  JSON-pointer fragment, e.g.
-  `https://s3.amazonaws.com/foliodocs/api/mod-agreements/s/agreements.html#/components/schemas/Agreement`
-  (the module's bundled OpenAPI YAML is auto-discovered on GitHub, using the
-  `docs/API/yamls/{page}.yaml` convention seen across the FOLIO ERM
-  modules), or a direct link to the YAML/JSON file itself with the same
-  kind of fragment, e.g.
-  `https://raw.githubusercontent.com/folio-org/mod-agreements/master/docs/API/yamls/agreements.yaml#/components/schemas/Agreement`
-  — useful if a module doesn't follow that convention, or auto-discovery
-  can't find the file (it'll say so). Unlike View 1/2 pages, a Redoc/View 4
-  page doesn't embed a scrapeable schema block, so the pointer names which
-  schema to map explicitly. Local `$ref`s, `oneOf` (picks the first
-  non-`$ref` branch), and `allOf` (merges all branches) are resolved
-  automatically; the YAML reader supports plain block-style YAML only (no
-  anchors/aliases or flow collections beyond empty `[]`/`{}`).
+- An OpenAPI/YAML document (View 4). Unlike View 1/2 pages, a Redoc/View 4
+  page doesn't embed a scrapeable schema block, so a fragment is required to
+  say which schema to map. Either form works, on either the doc page URL
+  itself or a direct link to the YAML/JSON file:
+  - A JSON-pointer fragment, e.g.
+    `https://s3.amazonaws.com/foliodocs/api/mod-agreements/s/agreements.html#/components/schemas/Agreement`
+  - A Redoc operation-permalink fragment (the kind Redoc puts in the address
+    bar when you click into a specific endpoint), e.g.
+    `https://s3.amazonaws.com/foliodocs/api/mod-agreements/s/agreements.html#tag/Agreements/operation/postSA`
+    — resolves to that operation's JSON request-body schema
+
+  Given the doc page URL, the module's bundled OpenAPI YAML is
+  auto-discovered on GitHub using the `docs/API/yamls/{page}.yaml`
+  convention seen across the FOLIO ERM modules; if a module doesn't follow
+  that convention (or auto-discovery can't find the file), it'll say so —
+  point directly at the YAML/JSON file's raw URL instead, e.g.
+  `https://raw.githubusercontent.com/folio-org/mod-agreements/master/docs/API/yamls/agreements.yaml#/components/schemas/Agreement`.
+  Local `$ref`s, `oneOf` (picks the first non-`$ref` branch), and `allOf`
+  (merges all branches) are resolved automatically; the YAML reader
+  supports plain block-style YAML only (no anchors/aliases or flow
+  collections beyond empty `[]`/`{}`).
 
 At each field prompt, the answer can be:
 

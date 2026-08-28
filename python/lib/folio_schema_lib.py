@@ -163,11 +163,33 @@ def _discover_openapi_yaml_url(repo, page):
     return f"https://raw.githubusercontent.com/{repo}/{branch_found}/{candidates[0]}"
 
 
+# A Redoc operation-permalink fragment, e.g. "#tag/Agreements/operation/postSA"
+# -- the tag is only there for the reader's benefit, since operationId is
+# expected to be unique within a document.
+_OPERATION_ANCHOR_RE = re.compile(r"^tag/[^/]+/operation/([^/]+)$")
+
+
+def _find_operation_schema(doc, operation_id):
+    for path_item in (doc.get("paths") or {}).values():
+        if not isinstance(path_item, dict):
+            continue
+        for op in path_item.values():
+            if not isinstance(op, dict) or op.get("operationId") != operation_id:
+                continue
+            content = (op.get("requestBody") or {}).get("content") or {}
+            media = content.get("application/json") or next(iter(content.values()), None)
+            if isinstance(media, dict) and "schema" in media:
+                return media["schema"]
+    return None
+
+
 # A raml2html doc page embeds one request-body schema per endpoint, keyed
 # by an anchor. An OpenAPI/YAML document has no such single embedded block,
-# so a JSON-pointer fragment (e.g. "#/components/schemas/Agreement") is
-# required instead, to say which schema in the document to map -- whether
-# the YAML lives at a URL or a local file path.
+# so either a JSON-pointer fragment (e.g. "#/components/schemas/Agreement")
+# or a Redoc operation-permalink fragment (e.g.
+# "#tag/Agreements/operation/postSA") is required instead, to say which
+# schema in the document to map -- whether the YAML lives at a URL or a
+# local file path.
 def _load_openapi_yaml(input_path, is_url, fragment):
     base_path = input_path.split("#", 1)[0]
     if is_url:
@@ -188,6 +210,17 @@ def _load_openapi_yaml(input_path, is_url, fragment):
         output_dir = os.path.dirname(base_path)
 
     doc = parse_yaml(raw)
+
+    op_match = _OPERATION_ANCHOR_RE.match(fragment)
+    if op_match:
+        operation_id = op_match.group(1)
+        target = _find_operation_schema(doc, operation_id)
+        if target is None:
+            print(f"Error: could not find operation '{operation_id}' with a JSON request body in '{base_path}'", file=sys.stderr)
+            sys.exit(1)
+        schema = dereference_local(doc, target)
+        return schema, output_dir, operation_id, None
+
     pointer = "#" + fragment
     try:
         target = resolve_pointer(doc, pointer)
@@ -205,15 +238,25 @@ def load_schema(input_path):
     is_url = parsed.scheme in ("http", "https")
 
     is_yaml = os.path.splitext(parsed.path)[1].lower() in (".yaml", ".yml")
-    if is_yaml and parsed.fragment.startswith("/"):
+    is_openapi_fragment = parsed.fragment.startswith("/") or _OPERATION_ANCHOR_RE.match(parsed.fragment)
+    if is_yaml and is_openapi_fragment:
         return _load_openapi_yaml(input_path, is_url, parsed.fragment)
 
     # A Redoc OpenAPI doc page (as opposed to a raml2html page) given with a
-    # JSON-pointer fragment -- auto-discover the module's bundled YAML and
-    # load the pointed-to schema from that instead of trying to scrape the
-    # (unscrapeable) HTML page itself.
+    # JSON-pointer or operation-permalink fragment -- auto-discover the
+    # module's bundled YAML and load the pointed-to schema from that
+    # instead of trying to scrape the (unscrapeable) HTML page itself.
     openapi_match = re.search(r"/api/([^/]+)/s/([^/]+)\.html$", parsed.path)
-    if is_url and openapi_match and parsed.fragment.startswith("/"):
+    if is_url and openapi_match:
+        if not is_openapi_fragment:
+            print(
+                "Error: this looks like a Redoc/OpenAPI doc page, which doesn't embed a "
+                "scrapeable schema block. Give either a JSON-pointer fragment "
+                "(e.g. '#/components/schemas/Agreement') or a Redoc operation "
+                "permalink fragment (e.g. '#tag/Agreements/operation/postSA').",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         repo = f"folio-org/{openapi_match.group(1)}"
         page = openapi_match.group(2)
         yaml_url = _discover_openapi_yaml_url(repo, page)
