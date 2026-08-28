@@ -5,7 +5,6 @@ import sys
 
 from lib.folio_schema_lib import (
     prompt_required,
-    prompt_with_default,
     prompt_for_resource,
     RefResolver,
     load_schema,
@@ -61,8 +60,7 @@ input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
     "Enter path or URL to the schema file: ", load_schema
 )
 
-output_folder_name = prompt_with_default("Enter folder to save the maps to [mapping]: ", "mapping")
-mapping_dir = os.path.join(output_dir, output_folder_name)
+mapping_dir = os.path.join(output_dir, "mapping")
 os.makedirs(mapping_dir, exist_ok=True)
 output_path = os.path.join(mapping_dir, output_stem + "_mapping.json")
 

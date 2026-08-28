@@ -10,15 +10,27 @@ from urllib.parse import urlparse
 
 from .yaml_lite import parse_yaml, resolve_pointer, dereference_local
 
+HTTP_HEADERS = {"User-Agent": "folio-schema-tools"}
+
 # Unauthenticated GitHub API requests are capped at 60/hour; set GITHUB_TOKEN
 # (any personal access token works, no scopes needed for public repos) to
-# raise that to 5000/hour. Sent on every request, not just GitHub's own API,
-# since GitHub also serves raw.githubusercontent.com content and honors the
-# same token there.
-HTTP_HEADERS = {"User-Agent": "folio-schema-tools"}
+# raise that to 5000/hour. Added only for requests actually going to GitHub
+# -- sending it to other hosts (e.g. the s3.amazonaws.com doc pages) can
+# make them reject the request outright, since they don't expect a GitHub
+# token in that header.
 _github_token = os.environ.get("GITHUB_TOKEN")
-if _github_token:
-    HTTP_HEADERS["Authorization"] = f"token {_github_token}"
+
+
+def _is_github_host(url):
+    host = urlparse(url).hostname or ""
+    return host == "api.github.com" or host.endswith(".githubusercontent.com")
+
+
+def _request_headers(url):
+    headers = dict(HTTP_HEADERS)
+    if _github_token and _is_github_host(url):
+        headers["Authorization"] = f"token {_github_token}"
+    return headers
 
 
 def prompt_required(prompt_text):
@@ -92,7 +104,7 @@ KNOWN_SCHEMAS = {
 
 def fetch_json(url):
     try:
-        req = urllib.request.Request(url, headers=HTTP_HEADERS)
+        req = urllib.request.Request(url, headers=_request_headers(url))
         with urllib.request.urlopen(req, timeout=15) as f:
             return json.loads(f.read().decode("utf-8"))
     except Exception:
@@ -229,7 +241,7 @@ def _load_openapi_yaml(input_path, is_url, fragment):
     base_path = input_path.split("#", 1)[0]
     if is_url:
         try:
-            req = urllib.request.Request(base_path, headers=HTTP_HEADERS)
+            req = urllib.request.Request(base_path, headers=_request_headers(base_path))
             with urllib.request.urlopen(req) as f:
                 raw = f.read().decode("utf-8")
         except (urllib.error.URLError, ValueError, OSError) as e:
@@ -325,7 +337,7 @@ def load_schema(input_path):
         return schema, input_dir, output_stem, None
 
     try:
-        req = urllib.request.Request(input_path, headers=HTTP_HEADERS)
+        req = urllib.request.Request(input_path, headers=_request_headers(input_path))
         with urllib.request.urlopen(req) as f:
             raw = f.read().decode("utf-8")
     except (urllib.error.URLError, ValueError, OSError) as e:

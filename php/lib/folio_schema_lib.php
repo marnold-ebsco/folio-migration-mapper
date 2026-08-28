@@ -2,15 +2,19 @@
 
 require_once __DIR__ . "/yaml_lite.php";
 
+$HTTP_HEADERS = ["User-Agent: folio-schema-tools"];
+
 // Unauthenticated GitHub API requests are capped at 60/hour; set GITHUB_TOKEN
 // (any personal access token works, no scopes needed for public repos) to
-// raise that to 5000/hour. Sent on every request, not just GitHub's own API,
-// since GitHub also serves raw.githubusercontent.com content and honors the
-// same token there.
-$HTTP_HEADERS = ["User-Agent: folio-schema-tools"];
-$githubToken = getenv("GITHUB_TOKEN");
-if ($githubToken) {
-    $HTTP_HEADERS[] = "Authorization: token $githubToken";
+// raise that to 5000/hour. Added only for requests actually going to GitHub
+// -- sending it to other hosts (e.g. the s3.amazonaws.com doc pages) can
+// make them reject the request outright, since they don't expect a GitHub
+// token in that header.
+$GITHUB_TOKEN = getenv("GITHUB_TOKEN");
+
+function is_github_host($url) {
+    $host = parse_url($url, PHP_URL_HOST) ?? "";
+    return $host === "api.github.com" || str_ends_with($host, ".githubusercontent.com");
 }
 
 function prompt_required($promptText) {
@@ -85,6 +89,10 @@ $KNOWN_SCHEMAS = [
 ];
 
 function fetch_url($url, $headers) {
+    global $GITHUB_TOKEN;
+    if ($GITHUB_TOKEN && is_github_host($url)) {
+        $headers[] = "Authorization: token $GITHUB_TOKEN";
+    }
     $context = stream_context_create([
         "http" => [
             "header" => implode("\r\n", $headers),

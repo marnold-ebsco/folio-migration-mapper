@@ -393,8 +393,6 @@ function build_and_prompt_object($node, $path, $silent) {
 );
 [$schema, $outputDir, $outputStem, $repo] = $loaded;
 
-$outputFolderName = prompt_with_default("Enter folder to save the maps to [mapping]: ", "mapping");
-
 if ($repo) {
     echo "Resolving \$ref pointers against $repo on GitHub...\n";
     $resolver = new RefResolver($repo, $HTTP_HEADERS, $KNOWN_SCHEMAS);
@@ -417,7 +415,7 @@ if (!in_array("legacyIdentifier", $schema["required"])) {
     $schema["required"][] = "legacyIdentifier";
 }
 
-$mappingDir = $outputDir === "" ? $outputFolderName : rtrim($outputDir, "/\\") . "/" . $outputFolderName;
+$mappingDir = $outputDir === "" ? "mapping" : rtrim($outputDir, "/\\") . "/mapping";
 if (!is_dir($mappingDir)) {
     mkdir($mappingDir, 0777, true);
 }
