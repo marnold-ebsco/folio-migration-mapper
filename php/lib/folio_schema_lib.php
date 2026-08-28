@@ -176,6 +176,56 @@ class RefResolver {
     }
 }
 
+// Redoc-rendered OpenAPI doc pages (.../api/{repo}/s/{page}.html) don't
+// embed a scrapeable schema block like raml2html pages do. Across the FOLIO
+// ERM modules we've checked (mod-agreements, mod-licenses), the module's
+// GitHub repo also publishes a bundled, self-contained OpenAPI YAML for
+// each doc page at "docs/API/yamls/{page}.yaml" -- try that exact path
+// first, then fall back to a basename search of the whole repo tree
+// (preferring anything still under a "yamls" directory, in case the doc
+// page's name doesn't match the primary bundle for some module).
+function discover_openapi_yaml_url($repo, $page, $headers) {
+    $treePaths = [];
+    $branchFound = null;
+    foreach (["master", "main"] as $branch) {
+        $data = fetch_json("https://api.github.com/repos/{$repo}/git/trees/{$branch}?recursive=1", $headers);
+        if ($data && !empty($data["tree"])) {
+            foreach ($data["tree"] as $t) {
+                if (($t["type"] ?? "") === "blob") {
+                    $treePaths[] = $t["path"];
+                }
+            }
+            $branchFound = $branch;
+            break;
+        }
+    }
+
+    $candidates = array_values(array_filter(
+        ["docs/API/yamls/{$page}.yaml", "docs/API/yamls/{$page}.yml"],
+        function ($p) use ($treePaths) { return in_array($p, $treePaths); }
+    ));
+    if (empty($candidates)) {
+        $candidates = array_values(array_filter($treePaths, function ($p) use ($page) {
+            $ext = strtolower(pathinfo($p, PATHINFO_EXTENSION));
+            $base = pathinfo($p, PATHINFO_FILENAME);
+            return $base === $page && ($ext === "yaml" || $ext === "yml");
+        }));
+        usort($candidates, function ($a, $b) {
+            $aYamls = strpos($a, "/yamls/") !== false ? 0 : 1;
+            $bYamls = strpos($b, "/yamls/") !== false ? 0 : 1;
+            if ($aYamls !== $bYamls) {
+                return $aYamls - $bYamls;
+            }
+            return strlen($a) - strlen($b);
+        });
+    }
+
+    if (empty($candidates)) {
+        return null;
+    }
+    return "https://raw.githubusercontent.com/{$repo}/{$branchFound}/{$candidates[0]}";
+}
+
 // A raml2html doc page embeds one request-body schema per endpoint, keyed
 // by an anchor. An OpenAPI/YAML document has no such single embedded block,
 // so a JSON-pointer fragment (e.g. "#/components/schemas/Agreement") is
@@ -227,6 +277,21 @@ function load_schema($inputPath, $headers) {
         return load_openapi_yaml($inputPath, $isUrl, $fragment, $headers);
     }
 
+    // A Redoc OpenAPI doc page (as opposed to a raml2html page) given with a
+    // JSON-pointer fragment -- auto-discover the module's bundled YAML and
+    // load the pointed-to schema from that instead of trying to scrape the
+    // (unscrapeable) HTML page itself.
+    if ($isUrl && str_starts_with($fragment, "/") && preg_match('#/api/([^/]+)/s/([^/]+)\.html$#', $parsed["path"] ?? "", $m)) {
+        $repo = "folio-org/" . $m[1];
+        $page = $m[2];
+        $yamlUrl = discover_openapi_yaml_url($repo, $page, $headers);
+        if (!$yamlUrl) {
+            fwrite(STDERR, "Error: could not find a bundled OpenAPI YAML for page '$page' in $repo\n");
+            exit(1);
+        }
+        return load_openapi_yaml($yamlUrl . "#" . $fragment, true, $fragment, $headers);
+    }
+
     if (!$isUrl) {
         $contents = @file_get_contents($inputPath);
         if ($contents === false) {
@@ -254,9 +319,11 @@ function load_schema($inputPath, $headers) {
         exit(1);
     }
 
-    // FOLIO doc pages are hosted as https://s3.amazonaws.com/foliodocs/api/{repo}/r/{page}.html
+    // FOLIO doc pages are hosted as https://s3.amazonaws.com/foliodocs/api/{repo}/{view}/{page}.html
+    // -- "r" (raml2html, one page per module) and "p" (raml2html, one page
+    // per resource) both embed the same kind of scrapeable schema block.
     $repo = null;
-    if (isset($parsed["path"]) && preg_match('#/api/([^/]+)/r/#', $parsed["path"], $m)) {
+    if (isset($parsed["path"]) && preg_match('#/api/([^/]+)/[rp]/#', $parsed["path"], $m)) {
         $repo = "folio-org/" . $m[1];
     }
 

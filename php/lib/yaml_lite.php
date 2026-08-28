@@ -251,10 +251,12 @@ function resolve_pointer($root, $pointer) {
     return $node;
 }
 
-// Resolves local "$ref": "#/..." pointers and collapses "oneOf" branches (a
-// oneOf that includes a bare {"$ref": ...} branch alongside inline
-// alternatives -- e.g. a field that's either a plain string or a full
-// Refdata object -- picks the first non-$ref branch, since that's the
+// Resolves local "$ref": "#/..." pointers, merges "allOf" branches (each
+// resolved and combined -- properties/required are unioned across all
+// branches, other keys are last-branch-wins), and collapses "oneOf"
+// branches (a oneOf that includes a bare {"$ref": ...} branch alongside
+// inline alternatives -- e.g. a field that's either a plain string or a
+// full Refdata object -- picks the first non-$ref branch, since that's the
 // simpler shape to map). A "currently resolving" set guards against
 // circular $refs (e.g. two schemas that reference each other) by cutting
 // the cycle short rather than recursing forever.
@@ -268,6 +270,39 @@ function dereference_local($root, $node, $resolving = []) {
     }
     if (!is_array($node)) {
         return $node;
+    }
+
+    if (isset($node["allOf"]) && is_array($node["allOf"]) && !empty($node["allOf"])) {
+        $merged = [];
+        $mergedProperties = [];
+        $mergedRequired = [];
+        foreach ($node["allOf"] as $branch) {
+            $resolvedBranch = dereference_local($root, $branch, $resolving);
+            if (!is_array($resolvedBranch)) {
+                continue;
+            }
+            foreach ($resolvedBranch as $k => $v) {
+                if ($k === "properties" && is_array($v)) {
+                    $mergedProperties = array_merge($mergedProperties, $v);
+                } elseif ($k === "required" && is_array($v)) {
+                    $mergedRequired = array_merge($mergedRequired, $v);
+                } else {
+                    $merged[$k] = $v;
+                }
+            }
+        }
+        if (!empty($mergedProperties)) {
+            $merged["properties"] = $mergedProperties;
+        }
+        if (!empty($mergedRequired)) {
+            $merged["required"] = array_values(array_unique($mergedRequired));
+        }
+        foreach ($node as $k => $v) {
+            if ($k !== "allOf") {
+                $merged[$k] = $v;
+            }
+        }
+        return dereference_local($root, $merged, $resolving);
     }
 
     if (isset($node["oneOf"]) && is_array($node["oneOf"]) && !empty($node["oneOf"])) {

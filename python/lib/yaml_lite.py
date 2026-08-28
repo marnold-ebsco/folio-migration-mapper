@@ -195,10 +195,12 @@ def resolve_pointer(root, pointer):
     return node
 
 
-# Resolves local "$ref": "#/..." pointers and collapses "oneOf" branches (a
-# oneOf that includes a bare {"$ref": ...} branch alongside inline
-# alternatives -- e.g. a field that's either a plain string or a full
-# Refdata object -- picks the first non-$ref branch, since that's the
+# Resolves local "$ref": "#/..." pointers, merges "allOf" branches (each
+# resolved and combined -- properties/required are unioned across all
+# branches, other keys are last-branch-wins), and collapses "oneOf"
+# branches (a oneOf that includes a bare {"$ref": ...} branch alongside
+# inline alternatives -- e.g. a field that's either a plain string or a
+# full Refdata object -- picks the first non-$ref branch, since that's the
 # simpler shape to map). A "currently resolving" set guards against
 # circular $refs (e.g. two schemas that reference each other) by cutting
 # the cycle short rather than recursing forever.
@@ -209,6 +211,31 @@ def dereference_local(root, node, resolving=None):
         return [dereference_local(root, v, resolving) for v in node]
     if not isinstance(node, dict):
         return node
+
+    if isinstance(node.get("allOf"), list) and node["allOf"]:
+        merged = {}
+        merged_properties = {}
+        merged_required = []
+        for branch in node["allOf"]:
+            resolved_branch = dereference_local(root, branch, resolving)
+            if not isinstance(resolved_branch, dict):
+                continue
+            for k, v in resolved_branch.items():
+                if k == "properties" and isinstance(v, dict):
+                    merged_properties.update(v)
+                elif k == "required" and isinstance(v, list):
+                    merged_required.extend(v)
+                else:
+                    merged[k] = v
+        if merged_properties:
+            merged["properties"] = merged_properties
+        if merged_required:
+            seen = set()
+            merged["required"] = [r for r in merged_required if not (r in seen or seen.add(r))]
+        for k, v in node.items():
+            if k != "allOf":
+                merged[k] = v
+        return dereference_local(root, merged, resolving)
 
     if isinstance(node.get("oneOf"), list) and node["oneOf"]:
         branches = node["oneOf"]

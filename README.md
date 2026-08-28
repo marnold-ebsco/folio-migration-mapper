@@ -32,16 +32,32 @@ When prompted for the schema, you can give:
 
 - A local file path to a JSON schema
 - A raw schema URL
-- A FOLIO API doc page URL with an anchor, e.g.
-  `https://s3.amazonaws.com/foliodocs/api/mod-inventory-storage/r/item-storage.html#item_storage_items_post`
-- An OpenAPI/YAML document (local file or URL) with a JSON-pointer fragment
-  naming the schema to map, e.g.
+- A FOLIO API doc page URL with an anchor. FOLIO publishes API docs in
+  [several formats](https://dev.folio.org/reference/api/) (referred to
+  below as "views" to match that page's terminology):
+  - **View 1** — one raml2html page per module, `/r/{module}.html#anchor`,
+    e.g.
+    `https://s3.amazonaws.com/foliodocs/api/mod-inventory-storage/r/item-storage.html#item_storage_items_post`
+  - **View 2** — one raml2html page per resource, `/p/{resource}.html#anchor`,
+    e.g.
+    `https://s3.amazonaws.com/foliodocs/api/mod-inventory-storage/p/item-storage.html#item_storage_items_post`
+    — same anchor convention and embedded schema block as View 1, just a
+    different page layout
+  - **View 3** — rare; not currently supported
+  - **View 4** — Redoc-rendered OpenAPI, `/s/{page}.html` (see below)
+- An OpenAPI/YAML document (View 4) — either the doc page URL itself with a
+  JSON-pointer fragment, e.g.
+  `https://s3.amazonaws.com/foliodocs/api/mod-agreements/s/agreements.html#/components/schemas/Agreement`
+  (the module's bundled OpenAPI YAML is auto-discovered on GitHub, using the
+  `docs/API/yamls/{page}.yaml` convention seen across the FOLIO ERM
+  modules), or a direct link to the YAML/JSON file itself with the same
+  kind of fragment, e.g.
   `https://raw.githubusercontent.com/folio-org/mod-agreements/master/docs/API/yamls/agreements.yaml#/components/schemas/Agreement`
-  — some FOLIO modules (like mod-agreements) publish Redoc-rendered OpenAPI
-  doc pages (`/s/...html`) that don't embed a scrapeable schema block like
-  the raml2html pages do, so point directly at the module's bundled OpenAPI
-  YAML/JSON file and its `#/components/schemas/...` pointer instead. Local
-  `$ref`s and `oneOf` (picks the first non-`$ref` branch) are resolved
+  — useful if a module doesn't follow that convention, or auto-discovery
+  can't find the file (it'll say so). Unlike View 1/2 pages, a Redoc/View 4
+  page doesn't embed a scrapeable schema block, so the pointer names which
+  schema to map explicitly. Local `$ref`s, `oneOf` (picks the first
+  non-`$ref` branch), and `allOf` (merges all branches) are resolved
   automatically; the YAML reader supports plain block-style YAML only (no
   anchors/aliases or flow collections beyond empty `[]`/`{}`).
 

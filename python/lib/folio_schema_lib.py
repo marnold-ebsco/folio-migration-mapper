@@ -131,6 +131,38 @@ class RefResolver:
         return {k: self.dereference(v, depth + 1) for k, v in node.items()}
 
 
+# Redoc-rendered OpenAPI doc pages (.../api/{repo}/s/{page}.html) don't
+# embed a scrapeable schema block like raml2html pages do. Across the FOLIO
+# ERM modules we've checked (mod-agreements, mod-licenses), the module's
+# GitHub repo also publishes a bundled, self-contained OpenAPI YAML for
+# each doc page at "docs/API/yamls/{page}.yaml" -- try that exact path
+# first, then fall back to a basename search of the whole repo tree
+# (preferring anything still under a "yamls" directory, in case the doc
+# page's name doesn't match the primary bundle for some module).
+def _discover_openapi_yaml_url(repo, page):
+    tree_paths = []
+    branch_found = None
+    for branch in ("master", "main"):
+        data = fetch_json(f"https://api.github.com/repos/{repo}/git/trees/{branch}?recursive=1")
+        if data and data.get("tree"):
+            tree_paths = [t["path"] for t in data["tree"] if t.get("type") == "blob"]
+            branch_found = branch
+            break
+
+    candidates = [p for p in (f"docs/API/yamls/{page}.yaml", f"docs/API/yamls/{page}.yml") if p in tree_paths]
+    if not candidates:
+        candidates = [
+            p for p in tree_paths
+            if posixpath.splitext(posixpath.basename(p))[0] == page
+            and posixpath.splitext(p)[1].lower() in (".yaml", ".yml")
+        ]
+        candidates.sort(key=lambda p: (0 if "/yamls/" in p else 1, len(p)))
+
+    if not candidates:
+        return None
+    return f"https://raw.githubusercontent.com/{repo}/{branch_found}/{candidates[0]}"
+
+
 # A raml2html doc page embeds one request-body schema per endpoint, keyed
 # by an anchor. An OpenAPI/YAML document has no such single embedded block,
 # so a JSON-pointer fragment (e.g. "#/components/schemas/Agreement") is
@@ -176,6 +208,20 @@ def load_schema(input_path):
     if is_yaml and parsed.fragment.startswith("/"):
         return _load_openapi_yaml(input_path, is_url, parsed.fragment)
 
+    # A Redoc OpenAPI doc page (as opposed to a raml2html page) given with a
+    # JSON-pointer fragment -- auto-discover the module's bundled YAML and
+    # load the pointed-to schema from that instead of trying to scrape the
+    # (unscrapeable) HTML page itself.
+    openapi_match = re.search(r"/api/([^/]+)/s/([^/]+)\.html$", parsed.path)
+    if is_url and openapi_match and parsed.fragment.startswith("/"):
+        repo = f"folio-org/{openapi_match.group(1)}"
+        page = openapi_match.group(2)
+        yaml_url = _discover_openapi_yaml_url(repo, page)
+        if not yaml_url:
+            print(f"Error: could not find a bundled OpenAPI YAML for page '{page}' in {repo}", file=sys.stderr)
+            sys.exit(1)
+        return _load_openapi_yaml(yaml_url + "#" + parsed.fragment, True, parsed.fragment)
+
     if not is_url:
         try:
             with open(input_path) as f:
@@ -197,8 +243,10 @@ def load_schema(input_path):
         print(f"Error: could not fetch URL '{input_path}': {e}", file=sys.stderr)
         sys.exit(1)
 
-    # FOLIO doc pages are hosted as https://s3.amazonaws.com/foliodocs/api/{repo}/r/{page}.html
-    repo_match = re.search(r"/api/([^/]+)/r/", parsed.path)
+    # FOLIO doc pages are hosted as https://s3.amazonaws.com/foliodocs/api/{repo}/{view}/{page}.html
+    # -- "r" (raml2html, one page per module) and "p" (raml2html, one page
+    # per resource) both embed the same kind of scrapeable schema block.
+    repo_match = re.search(r"/api/([^/]+)/[rp]/", parsed.path)
     repo = f"folio-org/{repo_match.group(1)}" if repo_match else None
 
     anchor = parsed.fragment
