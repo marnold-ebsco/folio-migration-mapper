@@ -119,7 +119,7 @@ def build_description(subschema, is_required, required_if_used=False):
         else:
             full += " pattern: " + pattern_val
     if is_required:
-        full = ("Required if used " if required_if_used else "REQUIRED ") + full
+        full = ("Required if used. " if required_if_used else "REQUIRED ") + full
 
     return full
 
@@ -372,5 +372,5 @@ print(f"Wrote {len(rows)} mapping rows to {output_path}")
 print()
 if object_keys:
     print("The following keys are objects with no defined structure in the schema (e.g. custom fields, or unresolved $ref) and were excluded from the output: " + ", ".join(object_keys))
+    print()
 print(f"Wrote key list to {key_list_path}")
-print()

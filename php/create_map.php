@@ -95,7 +95,7 @@ function build_description($subschema, $isRequired, $requiredIfUsed = false) {
         }
     }
     if ($isRequired) {
-        $full = ($requiredIfUsed ? "Required if used " : "REQUIRED ") . $full;
+        $full = ($requiredIfUsed ? "Required if used. " : "REQUIRED ") . $full;
     }
 
     return $full;
@@ -460,6 +460,6 @@ echo "Wrote " . count($rows) . " mapping rows to $outputPath\n";
 echo "\n";
 if (!empty($object_keys)) {
     echo "The following keys are objects with no defined structure in the schema (e.g. custom fields, or unresolved \$ref) and were excluded from the output: " . implode(", ", $object_keys) . "\n";
+    echo "\n";
 }
 echo "Wrote key list to $keyListPath\n";
-echo "\n";
