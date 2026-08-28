@@ -166,24 +166,33 @@ function discover_arrays($node, $path, &$seen) {
     }
 }
 
-// This tool only ever asks for two things: the schema, and the map file to
-// verify. Everything else (array instance counts for the master map, etc.)
-// is derived automatically, with no further prompts.
+// This tool only ever asks for the schema, the map file to verify, and
+// where to write the master map/report. Everything else (array instance
+// counts for the master map, etc.) is derived automatically, with no
+// further prompts.
 
-$inputPath = prompt_required("Enter path or URL to the schema file: ");
-$providedPath = prompt_required("Enter path to the existing map file to verify: ");
+[$inputPath, $loaded] = prompt_for_resource(
+    "Enter path or URL to the schema file: ",
+    function ($path) use ($HTTP_HEADERS) { return load_schema($path, $HTTP_HEADERS); }
+);
+[$schema, $outputDir, $outputStem, $repo] = $loaded;
 
-// ---------------------------------------------------------------------------
-// Step 1: read the map file to verify. Done first (and via raw text, not
-// just the parsed structure) so its actual array sizes can inform how many
-// instances the master map needs, without ever having to ask.
-// ---------------------------------------------------------------------------
+$outputFolderName = prompt_with_default("Enter folder to save the maps to [mapping]: ", "mapping");
 
-$rawContents = @file_get_contents($providedPath);
-if ($rawContents === false) {
-    fwrite(STDERR, "Error: could not find or read map file '$providedPath'\n");
-    exit(1);
-}
+// Read the map file to verify (via raw text, not just the parsed structure)
+// so its actual array sizes can inform how many instances the master map
+// needs, without ever having to ask.
+[$providedPath, $rawContents] = prompt_for_resource(
+    "Enter path to the existing map file to verify: ",
+    function ($path) {
+        $contents = @file_get_contents($path);
+        if ($contents === false) {
+            fwrite(STDERR, "Error: could not find or read map file '$path'\n");
+            return null;
+        }
+        return $contents;
+    }
+);
 $lines = explode("\n", $rawContents);
 
 // Line number of each "data" array element's opening brace, in order. Every
@@ -224,8 +233,6 @@ $providedFieldSet = array_flip($providedFields);
 // highest index actually used for each array, with a floor of 2) rather
 // than prompted for.
 // ---------------------------------------------------------------------------
-
-[$schema, $outputDir, $outputStem, $repo] = load_schema($inputPath, $HTTP_HEADERS);
 
 if ($repo) {
     echo "Resolving \$ref pointers against $repo on GitHub...\n";
@@ -276,7 +283,7 @@ walk($schema, "");
 // for inspection or reuse afterward. Named "..._master..." (rather than
 // gen_map's usual "..._mapping.json") so it can never collide with, and
 // overwrite, the provided map file being verified.
-$mappingDir = $outputDir === "" ? "mapping" : rtrim($outputDir, "/\\") . "/mapping";
+$mappingDir = $outputDir === "" ? $outputFolderName : rtrim($outputDir, "/\\") . "/" . $outputFolderName;
 if (!is_dir($mappingDir)) {
     mkdir($mappingDir, 0777, true);
 }

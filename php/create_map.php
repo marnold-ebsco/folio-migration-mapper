@@ -387,9 +387,13 @@ function build_and_prompt_object($node, $path, $silent) {
     }
 }
 
-$inputPath = prompt_required("Enter path or URL to the schema file: ");
+[$inputPath, $loaded] = prompt_for_resource(
+    "Enter path or URL to the schema file: ",
+    function ($path) use ($HTTP_HEADERS) { return load_schema($path, $HTTP_HEADERS); }
+);
+[$schema, $outputDir, $outputStem, $repo] = $loaded;
 
-[$schema, $outputDir, $outputStem, $repo] = load_schema($inputPath, $HTTP_HEADERS);
+$outputFolderName = prompt_with_default("Enter folder to save the maps to [mapping]: ", "mapping");
 
 if ($repo) {
     echo "Resolving \$ref pointers against $repo on GitHub...\n";
@@ -413,7 +417,7 @@ if (!in_array("legacyIdentifier", $schema["required"])) {
     $schema["required"][] = "legacyIdentifier";
 }
 
-$mappingDir = $outputDir === "" ? "mapping" : rtrim($outputDir, "/\\") . "/mapping";
+$mappingDir = $outputDir === "" ? $outputFolderName : rtrim($outputDir, "/\\") . "/" . $outputFolderName;
 if (!is_dir($mappingDir)) {
     mkdir($mappingDir, 0777, true);
 }
@@ -453,7 +457,9 @@ $output = ["data" => $rows];
 file_put_contents($outputPath, json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
 echo "Wrote " . count($rows) . " mapping rows to $outputPath\n";
+echo "\n";
 if (!empty($object_keys)) {
     echo "The following keys are objects with no defined structure in the schema (e.g. custom fields, or unresolved \$ref) and were excluded from the output: " . implode(", ", $object_keys) . "\n";
 }
 echo "Wrote key list to $keyListPath\n";
+echo "\n";

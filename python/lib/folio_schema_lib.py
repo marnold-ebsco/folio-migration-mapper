@@ -10,7 +10,15 @@ from urllib.parse import urlparse
 
 from .yaml_lite import parse_yaml, resolve_pointer, dereference_local
 
+# Unauthenticated GitHub API requests are capped at 60/hour; set GITHUB_TOKEN
+# (any personal access token works, no scopes needed for public repos) to
+# raise that to 5000/hour. Sent on every request, not just GitHub's own API,
+# since GitHub also serves raw.githubusercontent.com content and honors the
+# same token there.
 HTTP_HEADERS = {"User-Agent": "folio-schema-tools"}
+_github_token = os.environ.get("GITHUB_TOKEN")
+if _github_token:
+    HTTP_HEADERS["Authorization"] = f"token {_github_token}"
 
 
 def prompt_required(prompt_text):
@@ -22,6 +30,33 @@ def prompt_required(prompt_text):
         print("Error: no input provided.", file=sys.stderr)
         sys.exit(1)
     return value
+
+
+def prompt_with_default(prompt_text, default):
+    try:
+        value = input(prompt_text).strip()
+    except EOFError:
+        value = ""
+    return value if value else default
+
+
+# Prompts for a file path or URL, then runs `action` on it (e.g. load_schema
+# or reading a file) -- action is expected to sys.exit(1), with its own
+# error message, if the resource can't be found/read. Rather than ending
+# the script on the first typo, this re-prompts up to max_attempts times in
+# total before giving up for good.
+def prompt_for_resource(prompt_text, action, max_attempts=3):
+    for attempt in range(1, max_attempts + 1):
+        value = prompt_required(prompt_text)
+        try:
+            return value, action(value)
+        except SystemExit:
+            remaining = max_attempts - attempt
+            if remaining > 0:
+                print(f"Please try again ({remaining} attempt{'s' if remaining != 1 else ''} left).", file=sys.stderr)
+            else:
+                print("Too many failed attempts. Exiting.", file=sys.stderr)
+                sys.exit(1)
 
 # These two schemas are standardized and identical across every FOLIO module,
 # so they're hardcoded rather than looked up.
@@ -194,7 +229,8 @@ def _load_openapi_yaml(input_path, is_url, fragment):
     base_path = input_path.split("#", 1)[0]
     if is_url:
         try:
-            with urllib.request.urlopen(base_path) as f:
+            req = urllib.request.Request(base_path, headers=HTTP_HEADERS)
+            with urllib.request.urlopen(req) as f:
                 raw = f.read().decode("utf-8")
         except (urllib.error.URLError, ValueError, OSError) as e:
             print(f"Error: could not fetch URL '{base_path}': {e}", file=sys.stderr)
@@ -219,7 +255,16 @@ def _load_openapi_yaml(input_path, is_url, fragment):
             print(f"Error: could not find operation '{operation_id}' with a JSON request body in '{base_path}'", file=sys.stderr)
             sys.exit(1)
         schema = dereference_local(doc, target)
-        return schema, output_dir, operation_id, None
+        # Prefer the referenced component schema's own name (e.g.
+        # "Agreement") for the output file name -- the raw operationId
+        # (e.g. "postSA") doesn't carry that context. Falls back to the
+        # operationId if the request body isn't a single named $ref.
+        output_stem = operation_id
+        if isinstance(target, dict):
+            ref = target.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/"):
+                output_stem = ref.rstrip("/").rsplit("/", 1)[-1]
+        return schema, output_dir, output_stem, None
 
     pointer = "#" + fragment
     try:
@@ -280,7 +325,8 @@ def load_schema(input_path):
         return schema, input_dir, output_stem, None
 
     try:
-        with urllib.request.urlopen(input_path) as f:
+        req = urllib.request.Request(input_path, headers=HTTP_HEADERS)
+        with urllib.request.urlopen(req) as f:
             raw = f.read().decode("utf-8")
     except (urllib.error.URLError, ValueError, OSError) as e:
         print(f"Error: could not fetch URL '{input_path}': {e}", file=sys.stderr)

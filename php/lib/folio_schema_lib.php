@@ -2,7 +2,16 @@
 
 require_once __DIR__ . "/yaml_lite.php";
 
+// Unauthenticated GitHub API requests are capped at 60/hour; set GITHUB_TOKEN
+// (any personal access token works, no scopes needed for public repos) to
+// raise that to 5000/hour. Sent on every request, not just GitHub's own API,
+// since GitHub also serves raw.githubusercontent.com content and honors the
+// same token there.
 $HTTP_HEADERS = ["User-Agent: folio-schema-tools"];
+$githubToken = getenv("GITHUB_TOKEN");
+if ($githubToken) {
+    $HTTP_HEADERS[] = "Authorization: token $githubToken";
+}
 
 function prompt_required($promptText) {
     echo $promptText;
@@ -12,6 +21,36 @@ function prompt_required($promptText) {
         exit(1);
     }
     return $value;
+}
+
+function prompt_with_default($promptText, $default) {
+    echo $promptText;
+    $value = trim(fgets(STDIN) ?: "");
+    return $value !== "" ? $value : $default;
+}
+
+// Prompts for a file path or URL, then runs $action on it (e.g. load_schema
+// or reading a file) -- $action is expected to return null, with its own
+// error message, if the resource can't be found/read. Rather than ending
+// the script on the first typo, this re-prompts up to $maxAttempts times in
+// total before giving up for good. Hitting enter with no input at all is
+// handled by prompt_required() itself exiting immediately, unconditionally
+// -- that's not something this retry loop catches or counts against.
+function prompt_for_resource($promptText, $action, $maxAttempts = 3) {
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        $value = prompt_required($promptText);
+        $result = $action($value);
+        if ($result !== null) {
+            return [$value, $result];
+        }
+        $remaining = $maxAttempts - $attempt;
+        if ($remaining > 0) {
+            fwrite(STDERR, "Please try again ($remaining attempt" . ($remaining !== 1 ? "s" : "") . " left).\n");
+        } else {
+            fwrite(STDERR, "Too many failed attempts. Exiting.\n");
+            exit(1);
+        }
+    }
 }
 
 // These two schemas are standardized and identical across every FOLIO module,
@@ -267,20 +306,23 @@ function find_operation_schema($doc, $operationId) {
 // "#tag/Agreements/operation/postSA") is required instead, to say which
 // schema in the document to map -- whether the YAML lives at a URL or a
 // local file path.
+// Returns [$schema, $outputDir, $outputStem, $repo] on success, or null on
+// any failure (with its own error message already printed) so the caller
+// can decide whether to re-prompt or give up.
 function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
     $basePath = explode("#", $inputPath, 2)[0];
     if ($isUrl) {
         $raw = fetch_url($basePath, $headers);
         if ($raw === null) {
             fwrite(STDERR, "Error: could not fetch URL '$basePath'\n");
-            exit(1);
+            return null;
         }
         $outputDir = getcwd();
     } else {
         $raw = @file_get_contents($basePath);
         if ($raw === false) {
             fwrite(STDERR, "Error: could not find or read schema file '$basePath'\n");
-            exit(1);
+            return null;
         }
         $outputDir = dirname($basePath);
         if ($outputDir === ".") {
@@ -295,10 +337,19 @@ function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
         $target = find_operation_schema($doc, $operationId);
         if ($target === null) {
             fwrite(STDERR, "Error: could not find operation '$operationId' with a JSON request body in '$basePath'\n");
-            exit(1);
+            return null;
         }
         $schema = dereference_local($doc, $target);
-        return [$schema, $outputDir, $operationId, null];
+        // Prefer the referenced component schema's own name (e.g.
+        // "Agreement") for the output file name -- the raw operationId
+        // (e.g. "postSA") doesn't carry that context. Falls back to the
+        // operationId if the request body isn't a single named $ref.
+        $outputStem = $operationId;
+        if (is_array($target) && isset($target['$ref']) && is_string($target['$ref']) && str_starts_with($target['$ref'], "#/")) {
+            $refParts = array_values(array_filter(explode("/", rtrim($target['$ref'], "/"))));
+            $outputStem = end($refParts);
+        }
+        return [$schema, $outputDir, $outputStem, null];
     }
 
     $pointer = "#" . $fragment;
@@ -306,7 +357,7 @@ function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
         $target = resolve_pointer($doc, $pointer);
     } catch (Exception $e) {
         fwrite(STDERR, "Error: could not resolve pointer '$pointer' in '$basePath'\n");
-        exit(1);
+        return null;
     }
 
     $schema = dereference_local($doc, $target);
@@ -315,6 +366,9 @@ function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
     return [$schema, $outputDir, $outputStem, null];
 }
 
+// Returns [$schema, $outputDir, $outputStem, $repo] on success, or null on
+// any failure (with its own error message already printed) so the caller
+// can decide whether to re-prompt or give up.
 function load_schema($inputPath, $headers) {
     $parsed = parse_url($inputPath);
     $isUrl = isset($parsed["scheme"]) && in_array($parsed["scheme"], ["http", "https"]);
@@ -335,14 +389,14 @@ function load_schema($inputPath, $headers) {
                 "scrapeable schema block. Give either a JSON-pointer fragment " .
                 "(e.g. '#/components/schemas/Agreement') or a Redoc operation " .
                 "permalink fragment (e.g. '#tag/Agreements/operation/postSA').\n");
-            exit(1);
+            return null;
         }
         $repo = "folio-org/" . $m[1];
         $page = $m[2];
         $yamlUrl = discover_openapi_yaml_url($repo, $page, $headers);
         if (!$yamlUrl) {
             fwrite(STDERR, "Error: could not find a bundled OpenAPI YAML for page '$page' in $repo\n");
-            exit(1);
+            return null;
         }
         return load_openapi_yaml($yamlUrl . "#" . $fragment, true, $fragment, $headers);
     }
@@ -351,12 +405,12 @@ function load_schema($inputPath, $headers) {
         $contents = @file_get_contents($inputPath);
         if ($contents === false) {
             fwrite(STDERR, "Error: could not find or read schema file '$inputPath'\n");
-            exit(1);
+            return null;
         }
         $schema = json_decode($contents, true);
         if ($schema === null && json_last_error() !== JSON_ERROR_NONE) {
             fwrite(STDERR, "Error: '$inputPath' is not valid JSON: " . json_last_error_msg() . "\n");
-            exit(1);
+            return null;
         }
         $inputDir = dirname($inputPath);
         if ($inputDir === ".") {
@@ -371,7 +425,7 @@ function load_schema($inputPath, $headers) {
     $raw = fetch_url($inputPath, $headers);
     if ($raw === null) {
         fwrite(STDERR, "Error: could not fetch URL '$inputPath'\n");
-        exit(1);
+        return null;
     }
 
     // FOLIO doc pages are hosted as https://s3.amazonaws.com/foliodocs/api/{repo}/{view}/{page}.html
@@ -391,20 +445,20 @@ function load_schema($inputPath, $headers) {
         $pattern = '#id="' . preg_quote($anchor, '#') . '_request".*?<pre><code>(.*?)</code></pre>#s';
         if (!preg_match($pattern, $raw, $m)) {
             fwrite(STDERR, "Could not find a schema block for anchor '$anchor' on the page\n");
-            exit(1);
+            return null;
         }
         $schemaText = html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5);
         $schema = json_decode($schemaText, true);
         if ($schema === null && json_last_error() !== JSON_ERROR_NONE) {
             fwrite(STDERR, "Error: schema block for anchor '$anchor' is not valid JSON: " . json_last_error_msg() . "\n");
-            exit(1);
+            return null;
         }
         $outputStem = $anchor;
     } else {
         $schema = json_decode($raw, true);
         if ($schema === null && json_last_error() !== JSON_ERROR_NONE) {
             fwrite(STDERR, "Error: content at '$inputPath' is not valid JSON: " . json_last_error_msg() . "\n");
-            exit(1);
+            return null;
         }
         $path = $parsed["path"] ?? "";
         $filename = basename($path);

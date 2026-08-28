@@ -16,17 +16,33 @@ with schema loading, `$ref` resolution, and key-list building.
   default `json`)
 - Network access to `s3.amazonaws.com` (FOLIO doc pages) and `api.github.com` /
   `raw.githubusercontent.com` (schema `$ref` resolution)
+- Optional: set the `GITHUB_TOKEN` environment variable to a GitHub personal
+  access token (no scopes needed, since only public repos are read) to raise
+  GitHub's API rate limit from 60 requests/hour to 5000/hour. Schema
+  resolution can involve several GitHub API calls per run, so the
+  unauthenticated limit is easy to hit during heavy testing.
 
 ## create_map
 
 Interactively builds a mapping JSON file (and a plain key-list `.txt` file)
-from a FOLIO JSON schema. Prompts for the schema file or URL, then for a
-legacy field name (or a literal value) for each mappable field.
+from a FOLIO JSON schema. Prompts for the schema file or URL, then for the
+folder to save the maps to, then for a legacy field name (or a literal
+value) for each mappable field.
 
 ```bash
 python3 python/create_map.py
 php php/create_map.php
 ```
+
+If the schema file or URL can't be found or read, you're re-prompted for it
+— up to 3 attempts in total before the script gives up and exits. Pressing
+enter with no input at any prompt exits immediately, with no further
+retries.
+
+The folder-to-save-to prompt defaults to `mapping` (in the same directory as
+the schema file, or the current directory for a URL) if you just press
+enter; entering a different folder name creates it if it doesn't already
+exist.
 
 When prompted for the schema, you can give:
 
@@ -88,15 +104,18 @@ leave it unmapped, the rest of that array instance is silently skipped.
 | `--map-template-only` | A separate mode: skips all interactive prompting and writes one full map with every field present and `legacy_field` left as `"Not mapped"`. Ignores `--compact`/`--no-text-annotation` (with a notice), since a map with nothing mapped has nothing to compact or annotate. Instead, the `.txt` key list annotates each field with its schema shape: `fieldname  type: <type>`, plus `enum: opt1,opt2` if the field is an enum and `pattern: <pattern>` (or `pattern: UUID` for the standard UUID patterns) if it has one. |
 | `--help`, `-h` | Show usage and exit. |
 
-Output goes to a `mapping/` folder alongside the schema file (or the current
-directory, for a URL): `{stem}_mapping.json` and `{stem}.txt`.
+Output goes to the folder you chose (`mapping` by default) alongside the
+schema file (or the current directory, for a URL): `{stem}_mapping.json`
+and `{stem}.txt`.
 
 ## verify_map
 
 Builds an in-memory reference ("master") map straight from a FOLIO JSON
 schema, then runs 12 checks comparing it against an existing mapping file.
-Prompts for the schema file or URL, then for the path to the map file to
-verify.
+Prompts for the schema file or URL, then for the folder to save the master
+map/report to, then for the path to the map file to verify. The same
+retry-on-not-found (up to 3 attempts) and folder-creation behavior described
+under `create_map` above applies to all of these prompts.
 
 ```bash
 python3 python/verify_map.py
@@ -139,9 +158,9 @@ reported as such.
 | `--compact` | Remove fields with no active mapping (in the provided file) from both the master `.txt` key list and the master JSON map. Off by default. Only affects the written master files, never the 12 checks themselves. |
 | `--help`, `-h` | Show usage and exit. |
 
-Output goes to a `mapping/` folder alongside the schema file (or the current
-directory, for a URL): `{stem}_master_mapping.json` and `{stem}_master.txt`,
-plus the verification report printed to stdout.
+Output goes to the folder you chose (`mapping` by default) alongside the
+schema file (or the current directory, for a URL): `{stem}_master_mapping.json`
+and `{stem}_master.txt`, plus the verification report printed to stdout.
 
 ## Test fixtures
 

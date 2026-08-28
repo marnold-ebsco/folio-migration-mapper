@@ -5,6 +5,8 @@ import sys
 
 from lib.folio_schema_lib import (
     prompt_required,
+    prompt_with_default,
+    prompt_for_resource,
     RefResolver,
     load_schema,
     build_key_lines,
@@ -55,10 +57,12 @@ if empty_map and (compact or not mark_mapped):
     compact = False
     mark_mapped = True
 
-input_path = prompt_required("Enter path or URL to the schema file: ")
-schema, output_dir, output_stem, repo = load_schema(input_path)
+input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
+    "Enter path or URL to the schema file: ", load_schema
+)
 
-mapping_dir = os.path.join(output_dir, "mapping")
+output_folder_name = prompt_with_default("Enter folder to save the maps to [mapping]: ", "mapping")
+mapping_dir = os.path.join(output_dir, output_folder_name)
 os.makedirs(mapping_dir, exist_ok=True)
 output_path = os.path.join(mapping_dir, output_stem + "_mapping.json")
 
@@ -365,6 +369,8 @@ with open(output_path, "w") as f:
     json.dump(output, f, indent=3)
 
 print(f"Wrote {len(rows)} mapping rows to {output_path}")
+print()
 if object_keys:
     print("The following keys are objects with no defined structure in the schema (e.g. custom fields, or unresolved $ref) and were excluded from the output: " + ", ".join(object_keys))
 print(f"Wrote key list to {key_list_path}")
+print()

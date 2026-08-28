@@ -5,6 +5,8 @@ import sys
 
 from lib.folio_schema_lib import (
     prompt_required,
+    prompt_with_default,
+    prompt_for_resource,
     RefResolver,
     load_schema,
     build_key_lines,
@@ -146,25 +148,33 @@ def discover_arrays(node, path, seen):
     return seen
 
 
-# This tool only ever asks for two things: the schema, and the map file to
-# verify. Everything else (array instance counts for the master map, etc.)
-# is derived automatically, with no further prompts.
+# This tool only ever asks for the schema, the map file to verify, and where
+# to write the master map/report. Everything else (array instance counts
+# for the master map, etc.) is derived automatically, with no further
+# prompts.
 
-input_path = prompt_required("Enter path or URL to the schema file: ")
-provided_path = prompt_required("Enter path to the existing map file to verify: ")
+input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
+    "Enter path or URL to the schema file: ", load_schema
+)
 
-# ---------------------------------------------------------------------------
-# Step 1: read the map file to verify. Done first (and via raw text, not
-# just the parsed structure) so its actual array sizes can inform how many
-# instances the master map needs, without ever having to ask.
-# ---------------------------------------------------------------------------
+output_folder_name = prompt_with_default("Enter folder to save the maps to [mapping]: ", "mapping")
 
-try:
-    with open(provided_path) as f:
-        raw_contents = f.read()
-except OSError:
-    print(f"Error: could not find or read map file '{provided_path}'", file=sys.stderr)
-    sys.exit(1)
+
+def _read_map_file(path):
+    try:
+        with open(path) as f:
+            return f.read()
+    except OSError:
+        print(f"Error: could not find or read map file '{path}'", file=sys.stderr)
+        sys.exit(1)
+
+
+# Read the map file to verify (via raw text, not just the parsed structure)
+# so its actual array sizes can inform how many instances the master map
+# needs, without ever having to ask.
+provided_path, raw_contents = prompt_for_resource(
+    "Enter path to the existing map file to verify: ", _read_map_file
+)
 lines = raw_contents.split("\n")
 
 # Line number of each "data" array element's opening brace, in order. Every
@@ -207,8 +217,6 @@ provided_fields = list(provided_field_lines.keys())
 # prompted for.
 # ---------------------------------------------------------------------------
 
-schema, output_dir, output_stem, repo = load_schema(input_path)
-
 if repo:
     print(f"Resolving $ref pointers against {repo} on GitHub...")
     schema = RefResolver(repo).dereference(schema)
@@ -247,7 +255,7 @@ walk(schema, "")
 # inspection or reuse afterward. Named "..._master..." (rather than
 # gen_map's usual "..._mapping.json") so it can never collide with, and
 # overwrite, the provided map file being verified.
-mapping_dir = os.path.join(output_dir, "mapping")
+mapping_dir = os.path.join(output_dir, output_folder_name)
 os.makedirs(mapping_dir, exist_ok=True)
 
 # The key list (and, with --compact, the master map itself) reflect what's
