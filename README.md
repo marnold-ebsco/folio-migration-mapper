@@ -34,6 +34,16 @@ When prompted for the schema, you can give:
 - A raw schema URL
 - A FOLIO API doc page URL with an anchor, e.g.
   `https://s3.amazonaws.com/foliodocs/api/mod-inventory-storage/r/item-storage.html#item_storage_items_post`
+- An OpenAPI/YAML document (local file or URL) with a JSON-pointer fragment
+  naming the schema to map, e.g.
+  `https://raw.githubusercontent.com/folio-org/mod-agreements/master/docs/API/yamls/agreements.yaml#/components/schemas/Agreement`
+  — some FOLIO modules (like mod-agreements) publish Redoc-rendered OpenAPI
+  doc pages (`/s/...html`) that don't embed a scrapeable schema block like
+  the raml2html pages do, so point directly at the module's bundled OpenAPI
+  YAML/JSON file and its `#/components/schemas/...` pointer instead. Local
+  `$ref`s and `oneOf` (picks the first non-`$ref` branch) are resolved
+  automatically; the YAML reader supports plain block-style YAML only (no
+  anchors/aliases or flow collections beyond empty `[]`/`{}`).
 
 At each field prompt, the answer can be:
 

@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
+from .yaml_lite import parse_yaml, resolve_pointer, dereference_local
+
 HTTP_HEADERS = {"User-Agent": "folio-schema-tools"}
 
 
@@ -129,9 +131,50 @@ class RefResolver:
         return {k: self.dereference(v, depth + 1) for k, v in node.items()}
 
 
+# A raml2html doc page embeds one request-body schema per endpoint, keyed
+# by an anchor. An OpenAPI/YAML document has no such single embedded block,
+# so a JSON-pointer fragment (e.g. "#/components/schemas/Agreement") is
+# required instead, to say which schema in the document to map -- whether
+# the YAML lives at a URL or a local file path.
+def _load_openapi_yaml(input_path, is_url, fragment):
+    base_path = input_path.split("#", 1)[0]
+    if is_url:
+        try:
+            with urllib.request.urlopen(base_path) as f:
+                raw = f.read().decode("utf-8")
+        except (urllib.error.URLError, ValueError, OSError) as e:
+            print(f"Error: could not fetch URL '{base_path}': {e}", file=sys.stderr)
+            sys.exit(1)
+        output_dir = os.getcwd()
+    else:
+        try:
+            with open(base_path) as f:
+                raw = f.read()
+        except OSError:
+            print(f"Error: could not find or read schema file '{base_path}'", file=sys.stderr)
+            sys.exit(1)
+        output_dir = os.path.dirname(base_path)
+
+    doc = parse_yaml(raw)
+    pointer = "#" + fragment
+    try:
+        target = resolve_pointer(doc, pointer)
+    except (KeyError, IndexError, ValueError, TypeError):
+        print(f"Error: could not resolve pointer '{pointer}' in '{base_path}'", file=sys.stderr)
+        sys.exit(1)
+
+    schema = dereference_local(doc, target)
+    output_stem = fragment.rstrip("/").rsplit("/", 1)[-1]
+    return schema, output_dir, output_stem, None
+
+
 def load_schema(input_path):
     parsed = urlparse(input_path)
     is_url = parsed.scheme in ("http", "https")
+
+    is_yaml = os.path.splitext(parsed.path)[1].lower() in (".yaml", ".yml")
+    if is_yaml and parsed.fragment.startswith("/"):
+        return _load_openapi_yaml(input_path, is_url, parsed.fragment)
 
     if not is_url:
         try:
@@ -244,7 +287,7 @@ def _build_key_tree(node, path, rows_by_field, schema_type_info=False):
     for key, val in sorted((node.get("properties") or {}).items()):
         if key == "legacyIdentifier":
             suffix = " (added for f_m_t)"
-        elif val.get("readonly") or key == "_version":
+        elif val.get("readonly") or val.get("readOnly") or key == "_version":
             suffix = " (readonly)"
         else:
             suffix = ""

@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . "/yaml_lite.php";
+
 $HTTP_HEADERS = ["User-Agent: folio-schema-tools"];
 
 function prompt_required($promptText) {
@@ -174,9 +176,56 @@ class RefResolver {
     }
 }
 
+// A raml2html doc page embeds one request-body schema per endpoint, keyed
+// by an anchor. An OpenAPI/YAML document has no such single embedded block,
+// so a JSON-pointer fragment (e.g. "#/components/schemas/Agreement") is
+// required instead, to say which schema in the document to map -- whether
+// the YAML lives at a URL or a local file path.
+function load_openapi_yaml($inputPath, $isUrl, $fragment, $headers) {
+    $basePath = explode("#", $inputPath, 2)[0];
+    if ($isUrl) {
+        $raw = fetch_url($basePath, $headers);
+        if ($raw === null) {
+            fwrite(STDERR, "Error: could not fetch URL '$basePath'\n");
+            exit(1);
+        }
+        $outputDir = getcwd();
+    } else {
+        $raw = @file_get_contents($basePath);
+        if ($raw === false) {
+            fwrite(STDERR, "Error: could not find or read schema file '$basePath'\n");
+            exit(1);
+        }
+        $outputDir = dirname($basePath);
+        if ($outputDir === ".") {
+            $outputDir = "";
+        }
+    }
+
+    $doc = parse_yaml($raw);
+    $pointer = "#" . $fragment;
+    try {
+        $target = resolve_pointer($doc, $pointer);
+    } catch (Exception $e) {
+        fwrite(STDERR, "Error: could not resolve pointer '$pointer' in '$basePath'\n");
+        exit(1);
+    }
+
+    $schema = dereference_local($doc, $target);
+    $outputStem = array_values(array_filter(explode("/", rtrim($fragment, "/"))));
+    $outputStem = end($outputStem);
+    return [$schema, $outputDir, $outputStem, null];
+}
+
 function load_schema($inputPath, $headers) {
     $parsed = parse_url($inputPath);
     $isUrl = isset($parsed["scheme"]) && in_array($parsed["scheme"], ["http", "https"]);
+
+    $ext = strtolower(pathinfo($parsed["path"] ?? "", PATHINFO_EXTENSION));
+    $fragment = $parsed["fragment"] ?? "";
+    if (($ext === "yaml" || $ext === "yml") && str_starts_with($fragment, "/")) {
+        return load_openapi_yaml($inputPath, $isUrl, $fragment, $headers);
+    }
 
     if (!$isUrl) {
         $contents = @file_get_contents($inputPath);
@@ -308,7 +357,7 @@ function build_key_tree($node, $path, $rowsByField, $schemaTypeInfo = false) {
     foreach ($props as $key => $val) {
         if ($key === "legacyIdentifier") {
             $suffix = " (added for f_m_t)";
-        } elseif (!empty($val["readonly"]) || $key === "_version") {
+        } elseif (!empty($val["readonly"]) || !empty($val["readOnly"]) || $key === "_version") {
             $suffix = " (readonly)";
         } else {
             $suffix = "";

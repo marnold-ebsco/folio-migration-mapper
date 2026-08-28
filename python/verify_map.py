@@ -3,7 +3,7 @@ import os
 import re
 import sys
 
-from folio_schema_lib import (
+from lib.folio_schema_lib import (
     prompt_required,
     RefResolver,
     load_schema,
@@ -102,7 +102,7 @@ def walk(node, path):
     for key, sub in sorted(props.items()):
         if key == "metadata" or key == "_version":
             continue
-        if sub.get("readonly"):
+        if sub.get("readonly") or sub.get("readOnly"):
             continue
         full_path = f"{path}.{key}" if path else key
         is_required = key in node_required
@@ -130,7 +130,7 @@ def walk(node, path):
 
 def discover_arrays(node, path, seen):
     for key, sub in sorted((node.get("properties") or {}).items()):
-        if key == "metadata" or key == "_version" or sub.get("readonly"):
+        if key == "metadata" or key == "_version" or sub.get("readonly") or sub.get("readOnly"):
             continue
         full_path = f"{path}.{key}" if path else key
         items = sub.get("items", {})

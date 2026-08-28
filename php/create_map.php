@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . "/folio_schema_lib.php";
+require_once __DIR__ . "/lib/folio_schema_lib.php";
 
 const HELP_TEXT = <<<'EOT'
 Usage: create_map.php [options]
@@ -293,7 +293,7 @@ function build_and_prompt_instance($node, $path, $silent) {
     $arrayItems = [];
     $nestedObjItems = [];
     foreach ($props as $key => $sub) {
-        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"])) {
+        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"]) || !empty($sub["readOnly"])) {
             continue;
         }
         $subType = $sub["type"] ?? null;
@@ -364,7 +364,7 @@ function build_and_prompt_object($node, $path, $silent) {
     $props = $node["properties"] ?? [];
     ksort($props);
     foreach ($props as $key => $sub) {
-        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"])) {
+        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"]) || !empty($sub["readOnly"])) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;

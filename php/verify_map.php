@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__ . "/folio_schema_lib.php";
+require_once __DIR__ . "/lib/folio_schema_lib.php";
 
 const HELP_TEXT = <<<'EOT'
 Usage: verify_map.php [options]
@@ -108,7 +108,7 @@ function walk($node, $path) {
         if ($key === "metadata" || $key === "_version") {
             continue;
         }
-        if (!empty($sub["readonly"])) {
+        if (!empty($sub["readonly"]) || !empty($sub["readOnly"])) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;
@@ -145,7 +145,7 @@ function discover_arrays($node, $path, &$seen) {
     $props = $node["properties"] ?? [];
     ksort($props);
     foreach ($props as $key => $sub) {
-        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"])) {
+        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"]) || !empty($sub["readOnly"])) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;
