@@ -4,4 +4,4 @@
 *.zip
 __pycache__/
 spareparts/
-scratch.code-workspace
+folio_mapping.code-workspace
