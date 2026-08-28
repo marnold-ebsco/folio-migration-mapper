@@ -4,4 +4,4 @@
 *.zip
 __pycache__/
 spareparts/
-folio_mapping.code-workspace
+folio-migration-mapper.code-workspace
