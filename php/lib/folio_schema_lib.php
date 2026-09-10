@@ -564,14 +564,14 @@ function build_key_tree($node, $path, $rowsByField, $schemaTypeInfo = false) {
         $items = $val["items"] ?? [];
         $isArray = ($val["type"] ?? null) === "array";
         // Arrays are prompted per-instance, but the key list only shows the
-        // field's structural position once -- instance 1 is used as the
+        // field's structural position once -- instance 0 is used as the
         // representative row to check for an active mapping.
-        $lookupPath = $isArray ? "{$fullPath}[1]" : $fullPath;
+        $lookupPath = $isArray ? "{$fullPath}[0]" : $fullPath;
         $content = mapped_mark_content($rowsByField[$lookupPath] ?? null);
         $isRequired = in_array($key, $nodeRequired);
         $typeNote = $schemaTypeInfo ? type_annotation($val, $isRequired, strpos($fullPath, "[") !== false) : "";
         if ($isArray && !empty($items["properties"])) {
-            $children = build_key_tree($items, "{$fullPath}[1]", $rowsByField, $schemaTypeInfo);
+            $children = build_key_tree($items, "{$fullPath}[0]", $rowsByField, $schemaTypeInfo);
         } elseif (!empty($val["properties"])) {
             $children = build_key_tree($val, $fullPath, $rowsByField, $schemaTypeInfo);
         } else {

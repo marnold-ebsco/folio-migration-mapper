@@ -137,7 +137,7 @@ function required_note($folioField, $isRequired) {
     if (!$isRequired) {
         return "";
     }
-    // A field inside an array instance (e.g. additionalCallNumbers[1].callNumber)
+    // A field inside an array instance (e.g. additionalCallNumbers[0].callNumber)
     // is only required if that optional array instance is actually used --
     // the array itself isn't required, so the note is qualified accordingly.
     return strpos($folioField, "[") !== false ? " (REQUIRED if used)" : " (REQUIRED)";
@@ -257,7 +257,7 @@ function handle_array($sub, $fullPath, $isRequired, $forceSilent) {
     $childSilent = $forceSilent || $count === 0;
 
     if (!empty($items["properties"])) {
-        for ($idx = 1; $idx <= $effectiveCount; $idx++) {
+        for ($idx = 0; $idx < $effectiveCount; $idx++) {
             build_and_prompt_instance($items, "{$fullPath}[{$idx}]", $childSilent);
         }
     } else {
@@ -267,7 +267,7 @@ function handle_array($sub, $fullPath, $isRequired, $forceSilent) {
             $object_keys[] = $fullPath;
             return;
         }
-        for ($idx = 1; $idx <= $effectiveCount; $idx++) {
+        for ($idx = 0; $idx < $effectiveCount; $idx++) {
             $indexedPath = "{$fullPath}[{$idx}]";
             $rowIdx = build_row_index($indexedPath, $leafSchema, $isRequired);
             if ($childSilent) {
@@ -279,7 +279,7 @@ function handle_array($sub, $fullPath, $isRequired, $forceSilent) {
     }
 }
 
-// One specific array-of-objects instance (e.g. additionalCallNumbers[1]).
+// One specific array-of-objects instance (e.g. additionalCallNumbers[0]).
 // Its own direct leaf fields are batched: any "REQUIRED if used" field among
 // them is prompted first; if none end up mapped, the rest of the instance's
 // fields (including further nested arrays/objects) are auto-set to

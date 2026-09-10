@@ -151,7 +151,7 @@ def is_unmapped_row(row):
 def required_note(folio_field, is_required):
     if not is_required:
         return ""
-    # A field inside an array instance (e.g. additionalCallNumbers[1].callNumber)
+    # A field inside an array instance (e.g. additionalCallNumbers[0].callNumber)
     # is only required if that optional array instance is actually used --
     # the array itself isn't required, so the note is qualified accordingly.
     return " (REQUIRED if used)" if "[" in folio_field else " (REQUIRED)"
@@ -248,7 +248,7 @@ def handle_array(sub, full_path, is_required, force_silent):
     child_silent = force_silent or count == 0
 
     if items.get("properties"):
-        for idx in range(1, effective_count + 1):
+        for idx in range(effective_count):
             build_and_prompt_instance(items, f"{full_path}[{idx}]", child_silent)
     else:
         leaf_schema = items if items else sub
@@ -256,7 +256,7 @@ def handle_array(sub, full_path, is_required, force_silent):
             # object with no defined structure -> excluded from output
             object_keys.append(full_path)
             return
-        for idx in range(1, effective_count + 1):
+        for idx in range(effective_count):
             indexed_path = f"{full_path}[{idx}]"
             row = build_row(indexed_path, leaf_schema, is_required)
             if child_silent:
@@ -264,7 +264,7 @@ def handle_array(sub, full_path, is_required, force_silent):
             else:
                 prompt_leaf(row, is_required)
 
-# One specific array-of-objects instance (e.g. additionalCallNumbers[1]).
+# One specific array-of-objects instance (e.g. additionalCallNumbers[0]).
 # Its own direct leaf fields are batched: any "REQUIRED if used" field among
 # them is prompted first; if none end up mapped, the rest of the instance's
 # fields (including further nested arrays/objects) are auto-set to

@@ -122,7 +122,7 @@ function walk($node, $path) {
             $templateKey = preg_replace('/\[\d+\]/', '', $fullPath);
             $count = $arrayCounts[$templateKey] ?? 2;
             if (!empty($items["properties"])) {
-                for ($idx = 1; $idx <= $count; $idx++) {
+                for ($idx = 0; $idx < $count; $idx++) {
                     walk($items, "{$fullPath}[{$idx}]");
                 }
             } else {
@@ -130,7 +130,7 @@ function walk($node, $path) {
                 if (($leafSchema["type"] ?? null) === "object") {
                     continue; // unstructured object array -> excluded from output
                 }
-                for ($idx = 1; $idx <= $count; $idx++) {
+                for ($idx = 0; $idx < $count; $idx++) {
                     add_leaf("{$fullPath}[{$idx}]", $leafSchema, $isRequired);
                 }
             }
@@ -266,7 +266,7 @@ function max_index_in_provided($template, $providedFields) {
         $regexParts[] = $i === count($segments) - 1 ? "$q\[(\d+)\]" : "$q\[\d+\]";
     }
     $regex = '#^' . implode('\.', $regexParts) . '#';
-    $max = 0;
+    $max = -1;
     foreach ($providedFields as $field) {
         if (preg_match($regex, $field, $m)) {
             $max = max($max, (int)$m[1]);
@@ -278,7 +278,7 @@ function max_index_in_provided($template, $providedFields) {
 $arrayFieldNames = [];
 discover_arrays($schema, "", $arrayFieldNames);
 foreach ($arrayFieldNames as $name) {
-    $arrayCounts[$name] = max(2, max_index_in_provided($name, $providedFields));
+    $arrayCounts[$name] = max(2, max_index_in_provided($name, $providedFields) + 1);
 }
 
 walk($schema, "");
@@ -553,8 +553,8 @@ if ($isValidJson) {
 // legacy_field "Not mapped" and no literal value given either.
 //
 // A required field that belongs to an array-of-objects instance (e.g.
-// additionalCallNumbers[1].callNumber) is only flagged if at least one
-// sibling field within that SAME instance (additionalCallNumbers[1].*) is
+// additionalCallNumbers[0].callNumber) is only flagged if at least one
+// sibling field within that SAME instance (additionalCallNumbers[0].*) is
 // actually mapped. If the whole instance is missing/unmapped, that's just
 // the optional array not being used, not a violation.
 // ---------------------------------------------------------------------------

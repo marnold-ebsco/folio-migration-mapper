@@ -455,14 +455,14 @@ def _build_key_tree(node, path, rows_by_field, schema_type_info=False):
         items = val.get("items") or {}
         is_array = val.get("type") == "array"
         # Arrays are prompted per-instance, but the key list only shows the
-        # field's structural position once -- instance 1 is used as the
+        # field's structural position once -- instance 0 is used as the
         # representative row to check for an active mapping.
-        lookup_path = f"{full_path}[1]" if is_array else full_path
+        lookup_path = f"{full_path}[0]" if is_array else full_path
         content = mapped_mark_content(rows_by_field.get(lookup_path))
         is_required = key in node_required
         type_note = type_annotation(val, is_required, "[" in full_path) if schema_type_info else ""
         if is_array and items.get("properties"):
-            children = _build_key_tree(items, f"{full_path}[1]", rows_by_field, schema_type_info)
+            children = _build_key_tree(items, f"{full_path}[0]", rows_by_field, schema_type_info)
         elif val.get("properties"):
             children = _build_key_tree(val, full_path, rows_by_field, schema_type_info)
         else:

@@ -116,13 +116,13 @@ def walk(node, path):
             template_key = re.sub(r"\[\d+\]", "", full_path)
             count = array_counts.get(template_key, 2)
             if items.get("properties"):
-                for idx in range(1, count + 1):
+                for idx in range(count):
                     walk(items, f"{full_path}[{idx}]")
             else:
                 leaf_schema = items if items else sub
                 if leaf_schema.get("type") == "object":
                     continue  # unstructured object array -> excluded from output
-                for idx in range(1, count + 1):
+                for idx in range(count):
                     add_leaf(f"{full_path}[{idx}]", leaf_schema, is_required)
         elif sub.get("properties"):
             walk(sub, full_path)
@@ -240,7 +240,7 @@ def max_index_in_provided(template, fields):
         q = re.escape(seg)
         regex_parts.append(f"{q}\\[(\\d+)\\]" if i == len(segments) - 1 else f"{q}\\[\\d+\\]")
     regex = re.compile("^" + r"\.".join(regex_parts))
-    best = 0
+    best = -1
     for field in fields:
         m = regex.match(field)
         if m:
@@ -250,7 +250,7 @@ def max_index_in_provided(template, fields):
 
 array_field_names = discover_arrays(schema, "", [])
 for name in array_field_names:
-    array_counts[name] = max(2, max_index_in_provided(name, provided_fields))
+    array_counts[name] = max(2, max_index_in_provided(name, provided_fields) + 1)
 
 walk(schema, "")
 
@@ -479,8 +479,8 @@ if is_valid_json:
 # legacy_field "Not mapped" and no literal value given either.
 #
 # A required field that belongs to an array-of-objects instance (e.g.
-# additionalCallNumbers[1].callNumber) is only flagged if at least one
-# sibling field within that SAME instance (additionalCallNumbers[1].*) is
+# additionalCallNumbers[0].callNumber) is only flagged if at least one
+# sibling field within that SAME instance (additionalCallNumbers[0].*) is
 # actually mapped. If the whole instance is missing/unmapped, that's just
 # the optional array not being used, not a violation.
 # ---------------------------------------------------------------------------
