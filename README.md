@@ -95,6 +95,9 @@ Required fields are marked `(REQUIRED)` in the prompt; a required field
 inside an optional array instance is marked `(REQUIRED if used)` — if you
 leave it unmapped, the rest of that array instance is silently skipped.
 
+Array field keys are 0-based, e.g. `additionalCallNumbers[0]`,
+`additionalCallNumbers[1]`, ... for the first, second, etc. instance.
+
 ### create_map options
 
 | Option | Effect |
@@ -133,8 +136,8 @@ php php/verify_map.php
    `folio_field`, `legacy_field`, `value`, `description`, `fallback_legacy_field`,
    `fallback_value`, `rules`, `rules_apply_scope`
 4. **Duplicate `folio_field` values** — with line numbers
-5. **Missing array elements (gaps)** — e.g. `additionalCallNumbers[2].prefix`
-   present at index 1 but missing at index 2, when a sibling field has both
+5. **Missing array elements (gaps)** — e.g. `additionalCallNumbers[1].prefix`
+   present at index 0 but missing at index 1, when a sibling field has both
 6. **Quoted boolean values** — `"value": "true"` instead of `"value": true`
 7. **`folio_field` values not matching the schema** — misspellings, with
    line numbers
