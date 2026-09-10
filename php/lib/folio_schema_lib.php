@@ -501,15 +501,21 @@ function mapped_mark_content($row) {
 }
 
 // Some FOLIO schemas (e.g. item.json's itemIdentifier) never got the
-// readonly/readOnly attribute set, but say so in their description text
-// instead -- treat that convention as equivalent so such fields are still
-// excluded from actual maps (and still marked in the template-only list).
+// readonly/readOnly attribute set, but say so with a "(read only)"
+// parenthetical in their description instead -- treat that specific
+// convention as equivalent so such fields are still excluded from actual
+// maps (and still marked in the template-only list). Deliberately narrow
+// (parenthetical only): a bare "read-only"/"readonly" substring elsewhere
+// in a description can just be describing what the field's value *means*
+// (e.g. mod-agreements' own settable "readonly" flag on a knowledge base,
+// whose description reads "...protected/read-only...") rather than saying
+// the field itself can't be set.
 function is_readonly($subschema) {
     if (!empty($subschema["readonly"]) || !empty($subschema["readOnly"])) {
         return true;
     }
     $description = $subschema["description"] ?? "";
-    return (bool)preg_match('/read[\s-]?only/i', $description);
+    return (bool)preg_match('/\(\s*read[\s-]?only\s*\)/i', $description);
 }
 
 // The schema-type note shown per field when listing a template-only key

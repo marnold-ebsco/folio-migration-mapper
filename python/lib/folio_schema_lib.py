@@ -403,14 +403,20 @@ def mapped_mark_content(row):
 
 
 # Some FOLIO schemas (e.g. item.json's itemIdentifier) never got the
-# readonly/readOnly attribute set, but say so in their description text
-# instead -- treat that convention as equivalent so such fields are still
-# excluded from actual maps (and still marked in the template-only list).
+# readonly/readOnly attribute set, but say so with a "(read only)"
+# parenthetical in their description instead -- treat that specific
+# convention as equivalent so such fields are still excluded from actual
+# maps (and still marked in the template-only list). Deliberately narrow
+# (parenthetical only): a bare "read-only"/"readonly" substring elsewhere
+# in a description can just be describing what the field's value *means*
+# (e.g. mod-agreements' own settable "readonly" flag on a knowledge base,
+# whose description reads "...protected/read-only...") rather than saying
+# the field itself can't be set.
 def is_readonly(subschema):
     if subschema.get("readonly") or subschema.get("readOnly"):
         return True
     description = subschema.get("description") or ""
-    return bool(re.search(r"read[\s-]?only", description, re.IGNORECASE))
+    return bool(re.search(r"\(\s*read[\s-]?only\s*\)", description, re.IGNORECASE))
 
 
 # The schema-type note shown per field when listing a template-only key
