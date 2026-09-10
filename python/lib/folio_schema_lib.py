@@ -402,6 +402,17 @@ def mapped_mark_content(row):
     return ""
 
 
+# Some FOLIO schemas (e.g. item.json's itemIdentifier) never got the
+# readonly/readOnly attribute set, but say so in their description text
+# instead -- treat that convention as equivalent so such fields are still
+# excluded from actual maps (and still marked in the template-only list).
+def is_readonly(subschema):
+    if subschema.get("readonly") or subschema.get("readOnly"):
+        return True
+    description = subschema.get("description") or ""
+    return bool(re.search(r"read[\s-]?only", description, re.IGNORECASE))
+
+
 # The schema-type note shown per field when listing a template-only key
 # list (nothing is ever mapped there, so there's nothing for the usual mark
 # to show -- this describes the field's shape instead). Mirrors the
@@ -447,7 +458,7 @@ def _build_key_tree(node, path, rows_by_field, schema_type_info=False):
     for key, val in sorted((node.get("properties") or {}).items()):
         if key == "legacyIdentifier":
             suffix = " (added for f_m_t)"
-        elif val.get("readonly") or val.get("readOnly") or key == "_version":
+        elif is_readonly(val) or key == "_version":
             suffix = " (readonly)"
         else:
             suffix = ""

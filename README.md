@@ -98,6 +98,12 @@ leave it unmapped, the rest of that array instance is silently skipped.
 Array field keys are 0-based, e.g. `additionalCallNumbers[0]`,
 `additionalCallNumbers[1]`, ... for the first, second, etc. instance.
 
+Fields the server generates or manages are excluded from the map entirely
+(shown as `(readonly)` in `--map-template-only`'s key list instead). A field
+counts as readonly if the schema marks it `readonly`/`readOnly`, or if its
+description says so in prose (e.g. item-storage's `itemIdentifier`, which
+has no `readonly` attribute but says "(read only)" in its description).
+
 ### create_map options
 
 | Option | Effect |

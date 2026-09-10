@@ -500,6 +500,18 @@ function mapped_mark_content($row) {
     return "";
 }
 
+// Some FOLIO schemas (e.g. item.json's itemIdentifier) never got the
+// readonly/readOnly attribute set, but say so in their description text
+// instead -- treat that convention as equivalent so such fields are still
+// excluded from actual maps (and still marked in the template-only list).
+function is_readonly($subschema) {
+    if (!empty($subschema["readonly"]) || !empty($subschema["readOnly"])) {
+        return true;
+    }
+    $description = $subschema["description"] ?? "";
+    return (bool)preg_match('/read[\s-]?only/i', $description);
+}
+
 // The schema-type note shown per field when listing a template-only key
 // list (nothing is ever mapped there, so there's nothing for the usual mark
 // to show -- this describes the field's shape instead). Mirrors the
@@ -555,7 +567,7 @@ function build_key_tree($node, $path, $rowsByField, $schemaTypeInfo = false) {
     foreach ($props as $key => $val) {
         if ($key === "legacyIdentifier") {
             $suffix = " (added for f_m_t)";
-        } elseif (!empty($val["readonly"]) || !empty($val["readOnly"]) || $key === "_version") {
+        } elseif (is_readonly($val) || $key === "_version") {
             $suffix = " (readonly)";
         } else {
             $suffix = "";

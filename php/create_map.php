@@ -296,7 +296,7 @@ function build_and_prompt_instance($node, $path, $silent) {
     $arrayItems = [];
     $nestedObjItems = [];
     foreach ($props as $key => $sub) {
-        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"]) || !empty($sub["readOnly"])) {
+        if ($key === "metadata" || $key === "_version" || is_readonly($sub)) {
             continue;
         }
         $subType = $sub["type"] ?? null;
@@ -367,7 +367,7 @@ function build_and_prompt_object($node, $path, $silent) {
     $props = $node["properties"] ?? [];
     ksort($props);
     foreach ($props as $key => $sub) {
-        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"]) || !empty($sub["readOnly"])) {
+        if ($key === "metadata" || $key === "_version" || is_readonly($sub)) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;

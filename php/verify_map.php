@@ -111,7 +111,7 @@ function walk($node, $path) {
         if ($key === "metadata" || $key === "_version") {
             continue;
         }
-        if (!empty($sub["readonly"]) || !empty($sub["readOnly"])) {
+        if (is_readonly($sub)) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;
@@ -148,7 +148,7 @@ function discover_arrays($node, $path, &$seen) {
     $props = $node["properties"] ?? [];
     ksort($props);
     foreach ($props as $key => $sub) {
-        if ($key === "metadata" || $key === "_version" || !empty($sub["readonly"]) || !empty($sub["readOnly"])) {
+        if ($key === "metadata" || $key === "_version" || is_readonly($sub)) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;

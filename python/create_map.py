@@ -12,6 +12,7 @@ from lib.folio_schema_lib import (
     build_key_lines,
     mapped_mark_content,
     apply_user_import_exception,
+    is_readonly,
 )
 
 HELP_TEXT = """\
@@ -275,7 +276,7 @@ def build_and_prompt_instance(node, path, silent):
     node_required = set(node.get("required", []))
     leaf_items, array_items, nested_obj_items = [], [], []
     for key, sub in sorted((node.get("properties") or {}).items()):
-        if key == "metadata" or key == "_version" or sub.get("readonly") or sub.get("readOnly"):
+        if key == "metadata" or key == "_version" or is_readonly(sub):
             continue
         sub_type = sub.get("type")
         if sub_type == "array":
@@ -329,7 +330,7 @@ def build_and_prompt_instance(node, path, silent):
 def build_and_prompt_object(node, path, silent):
     node_required = set(node.get("required", []))
     for key, sub in sorted((node.get("properties") or {}).items()):
-        if key == "metadata" or key == "_version" or sub.get("readonly") or sub.get("readOnly"):
+        if key == "metadata" or key == "_version" or is_readonly(sub):
             continue
         full_path = f"{path}.{key}" if path else key
         is_required = key in node_required
