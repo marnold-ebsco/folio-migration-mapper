@@ -23,7 +23,7 @@ dependency-free YAML parser (`yaml_lite.py` / `.php`) for OpenAPI schemas.
 
 Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
 (no other branches currently exist). Working tree is clean as of this
-handoff, HEAD at `377248e` (pushed).
+handoff, HEAD at `6ac72f9` (pushed).
 
 ## Scalars-then-arrays prompt ordering (2026-10-23)
 
@@ -40,8 +40,8 @@ own `--- fieldName ---` break immediately before its "how many instances"
 prompt. Nested plain objects (e.g. `personal`) recurse and get the same
 scalars-then-arrays split internally. Smoke-tested against a synthetic
 schema mixing scalars, a nested plain object, and two array fields in both
-languages; prompt order and JSON output confirmed identical. Not yet
-committed/pushed.
+languages; prompt order and JSON output confirmed identical. Committed
+(`6ac72f9`) and pushed to `main`.
 
 ## Array-instance prompting no longer guesses (2026-10-23)
 
@@ -56,9 +56,9 @@ and `php/create_map.php`: whatever is typed (or "Not mapped" if left blank)
 is used exactly as given, with no suffix ever appended automatically.
 Smoke-tested against a synthetic 2-instance array schema in both languages,
 including leaving a later instance blank (correctly drops out, doesn't
-inherit anything). Not yet committed/pushed.
+inherit anything). Committed (`d61867a`) and pushed to `main`.
 
-## Schema-selection menu (most recent feature, 2026-10-23)
+## Schema-selection menu (2026-10-23)
 
 The schema-source prompt (`"Enter path or URL to the schema file: "`) in
 all four scripts is now a numbered menu instead of a bare free-form prompt:
@@ -94,6 +94,8 @@ no pending work, no known bugs.
 
 Recent commit history (newest first):
 
+- `6ac72f9` — Prompt scalars before arrays, with a visible switch-over
+- `d61867a` — Stop guessing legacy field names for array instances
 - `377248e` — Add numbered menu (Users/Holdings/Items/Other) for schema
   source prompt
 - `41c99c4` — Tighten description-only readonly detection to avoid false
