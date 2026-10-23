@@ -87,6 +87,52 @@ Python/PHP output parity reconfirmed via `jq -S .` diff for Users, Holdings,
 and Items. README's `create_map`/`verify_map` sections updated to match.
 Committed (`377248e`) and pushed to `main`.
 
+## Smoke test (2026-10-23) — baseline confirmed green
+
+Ran the paired Python/PHP smoke test this handoff recommends, both with
+`--map-template-only`:
+
+- **View 1 (Items, `mod-inventory-storage`)**: identical JSON (60 rows) and
+  `.txt` key list between languages.
+- **View 4 (Agreements, OpenAPI/Redoc, `mod-agreements`)**: identical JSON
+  (99 rows) and `.txt` key list; both excluded the same 4 unresolved-`$ref`
+  keys (`customProperties`, `linkedLicenses[0].remoteId_object`,
+  `orgs[0].org.orgsUuid_object`, `usageDataProviders[0].remoteId_object`).
+
+Compared with `diff <(jq -S . ...)` for JSON, plain `diff` for `.txt`. Test
+output was written to throwaway `mapping/smoketest*` subfolders and deleted
+afterward; `git status` was clean before and after. No code changes.
+
+### Running this test from a Windows Claude session (gotcha)
+
+This repo's own CLAUDE.md says work happens in WSL, not Windows — but when
+a Windows-side Claude Code session runs WSL commands via
+`wsl.exe -d Ubuntu-24.04 bash -lc '...'` (per the global CLAUDE.md rule, to
+avoid Git Bash's `/tmp`-path rewriting), **any `#` character inside that
+single-quoted command string gets silently truncated** somewhere in the
+Windows→WSL argument-passing path — it's not a bash comment-parsing issue
+inside WSL itself (confirmed: `bash -lc 'URL="...#frag"; echo "[$URL]"'`
+from Windows prints `[]`, but the same command run natively inside a WSL
+terminal is fine). This bit hard here because View 4 FOLIO doc-page URLs
+and JSON-pointer fragments always contain `#`
+(e.g. `.../agreements.html#/components/schemas/Agreement`), and
+`create_map`'s "Other" option needs that full URL typed at a prompt.
+
+**Workaround used:** don't put the `#`-bearing string inline in the
+`wsl.exe ... bash -lc '...'` argument at all. Instead, write the full
+multi-line stdin (menu choice, URL, output folder) to a file first with a
+heredoc (`cat > /tmp/foo.txt <<EOF ... EOF`, run as its own `wsl.exe`
+call), then pipe that file into the script (`python3 create_map.py < foo.txt`)
+in a separate call. The heredoc's `EOF` body isn't subject to the same
+truncation, so the `#` survives intact.
+
+**Better fix, not yet done:** avoid the Windows→WSL hop per-command
+entirely — e.g. open a real WSL terminal (`wsl.exe -d Ubuntu-24.04` with no
+trailing `-c`/`bash -lc` wrapper, or a WSL-side terminal tab) and run
+`python3`/`php` directly from there for anything that needs a URL with a
+`#` in it. The one-shot `wsl.exe -d Ubuntu-24.04 bash -lc '<cmd>'` pattern
+is fine for commands with no `#`.
+
 ## Current state (as of 2026-10-23)
 
 Everything below has been committed and pushed to `main`. No open branches,
