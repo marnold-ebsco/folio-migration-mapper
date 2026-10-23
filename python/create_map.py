@@ -6,7 +6,7 @@ import sys
 from lib.folio_schema_lib import (
     prompt_required,
     prompt_with_default,
-    prompt_for_resource,
+    prompt_for_schema_resource,
     RefResolver,
     load_schema,
     build_key_lines,
@@ -19,8 +19,9 @@ HELP_TEXT = """\
 Usage: create_map.py [options]
 
 Interactively builds a folio_migration_tools mapping JSON file (and a plain
-key-list .txt file) from a FOLIO JSON schema. Prompts for the schema file or
-URL, then for a legacy field name (or literal value) for each mappable field.
+key-list .txt file) from a FOLIO JSON schema. Prompts you to pick the object
+to map (Users, Holdings, Items, or Other to enter a path/URL), then for a
+legacy field name (or literal value) for each mappable field.
 
 Options:
   --no-text-annotation    Don't annotate the .txt key list with each field's
@@ -58,9 +59,7 @@ if empty_map and (compact or not mark_mapped):
     compact = False
     mark_mapped = True
 
-input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
-    "Enter path or URL to the schema file: ", load_schema
-)
+input_path, (schema, output_dir, output_stem, repo) = prompt_for_schema_resource(load_schema)
 
 # Blank stays in the mapping folder itself; a value creates that as a
 # subfolder of mapping, rather than replacing it.

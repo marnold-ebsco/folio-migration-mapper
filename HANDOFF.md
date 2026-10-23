@@ -3,6 +3,11 @@
 Read this first after a session clear. See `README.md` for full usage docs;
 this file is about *state*, not usage.
 
+**Location / execution:** this repo lives in WSL at
+`~/folio-migration-mapper` (`\\wsl.localhost\Ubuntu-24.04\home\marnold\folio-migration-mapper`
+from Windows). Do all work here — running code, tests, linting, git — in
+WSL, not Windows.
+
 ## What this is
 
 Two functionally-identical CLI tools, kept in byte-for-byte parity:
@@ -17,13 +22,42 @@ URLs — see README's "views" section). Shared logic lives in
 dependency-free YAML parser (`yaml_lite.py` / `.php`) for OpenAPI schemas.
 
 Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
-(no other branches currently exist). Working tree is clean as of this
-handoff, HEAD at `41c99c4`.
+(no other branches currently exist). HEAD at `41c99c4`; working tree has
+**uncommitted changes** — see "Pending work" below.
 
-## Current state (as of 2026-10-23)
+## Pending work (uncommitted, as of 2026-10-23)
+
+The schema-source prompt (`"Enter path or URL to the schema file: "`) in
+all four scripts is now a numbered menu instead of a bare free-form prompt:
+
+```
+Select the object to build a map for:
+  1) Users      -> mod-user-import's import.html#user_import_post
+  2) Holdings   -> mod-inventory-storage's holdings-storage.html#holdings_storage_holdings_post
+  3) Items      -> mod-inventory-storage's item-storage.html#item_storage_items_post
+  4) Other (enter a URL)
+Choice [1-4]:
+```
+
+Options 1-3 jump straight to a hardcoded FOLIO doc-page URL (View 1); option
+4 falls back to the original free-form path/URL prompt. New shared helper
+`prompt_for_schema_resource()` in `folio_schema_lib.py`/`.php` (alongside
+the existing `prompt_for_resource()`, which is still used for the *other*
+prompts — e.g. `verify_map`'s "existing map file to verify" path — so both
+helpers remain exported/used). Retry behavior matches `prompt_for_resource`:
+an invalid menu choice or a failed load re-shows the whole menu, up to 3
+attempts total.
+
+Smoke-tested in WSL: all three presets plus "Other" in both `create_map`
+and `verify_map`, Python and PHP, including an invalid-choice retry;
+Python/PHP output parity reconfirmed via `jq -S .` diff for Users, Holdings,
+and Items. README's `create_map`/`verify_map` sections updated to match.
+Not yet committed — review the diff and commit when ready.
+
+## Current state of main (as of 2026-10-23)
 
 Everything below has been committed and pushed to `main`. No open branches,
-no pending work, no known bugs.
+no known bugs as of HEAD `41c99c4` (before the pending change above).
 
 Recent commit history (newest first):
 
@@ -112,7 +146,8 @@ to check).
 
 ## Next steps
 
-None currently queued. No open bugs, no in-progress feature. If resuming
-cold, re-run a quick paired Python/PHP smoke test (View 1 + View 4,
-`--map-template-only`) before making changes, to confirm the baseline is
-still green.
+Review and commit the schema-selection-menu change described under
+"Pending work" above (currently uncommitted on `main`). No other open bugs
+or in-progress features. If resuming cold, re-run a quick paired Python/PHP
+smoke test (View 1 + View 4, `--map-template-only`) before making changes,
+to confirm the baseline is still green.

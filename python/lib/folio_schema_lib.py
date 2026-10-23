@@ -70,6 +70,48 @@ def prompt_for_resource(prompt_text, action, max_attempts=3):
                 print("Too many failed attempts. Exiting.", file=sys.stderr)
                 sys.exit(1)
 
+
+# Shortcuts for the schemas mapped most often, so the common case doesn't
+# require hunting down a FOLIO doc URL each time. "Other" (handled inside
+# prompt_for_schema_resource below) falls back to the same free-form
+# URL/path prompt as prompt_for_resource.
+SCHEMA_PRESETS = [
+    ("Users", "https://s3.amazonaws.com/foliodocs/api/mod-user-import/r/import.html#user_import_post"),
+    ("Holdings", "https://s3.amazonaws.com/foliodocs/api/mod-inventory-storage/r/holdings-storage.html#holdings_storage_holdings_post"),
+    ("Items", "https://s3.amazonaws.com/foliodocs/api/mod-inventory-storage/r/item-storage.html#item_storage_items_post"),
+]
+
+
+# Same retry contract as prompt_for_resource, but offers the common schemas
+# as a numbered menu before falling back to a free-form URL/path prompt for
+# "Other". Re-shows the full menu on a failed attempt (bad choice or an
+# action that raised SystemExit), consistent with prompt_for_resource's
+# behavior of re-prompting from scratch.
+def prompt_for_schema_resource(action, max_attempts=3):
+    other_num = len(SCHEMA_PRESETS) + 1
+    for attempt in range(1, max_attempts + 1):
+        print("Select the object to build a map for:")
+        for i, (label, _url) in enumerate(SCHEMA_PRESETS, 1):
+            print(f"  {i}) {label}")
+        print(f"  {other_num}) Other (enter a URL)")
+        try:
+            choice = prompt_required(f"Choice [1-{other_num}]: ")
+            if choice.isdigit() and 1 <= int(choice) <= len(SCHEMA_PRESETS):
+                value = SCHEMA_PRESETS[int(choice) - 1][1]
+            elif choice == str(other_num):
+                value = prompt_required("Enter path or URL to the schema file: ")
+            else:
+                print(f"Error: invalid choice '{choice}'.", file=sys.stderr)
+                sys.exit(1)
+            return value, action(value)
+        except SystemExit:
+            remaining = max_attempts - attempt
+            if remaining > 0:
+                print(f"Please try again ({remaining} attempt{'s' if remaining != 1 else ''} left).", file=sys.stderr)
+            else:
+                print("Too many failed attempts. Exiting.", file=sys.stderr)
+                sys.exit(1)
+
 # These two schemas are standardized and identical across every FOLIO module,
 # so they're hardcoded rather than looked up.
 KNOWN_SCHEMAS = {

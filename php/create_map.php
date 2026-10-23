@@ -6,8 +6,9 @@ const HELP_TEXT = <<<'EOT'
 Usage: create_map.php [options]
 
 Interactively builds a folio_migration_tools mapping JSON file (and a plain
-key-list .txt file) from a FOLIO JSON schema. Prompts for the schema file or
-URL, then for a legacy field name (or literal value) for each mappable field.
+key-list .txt file) from a FOLIO JSON schema. Prompts you to pick the object
+to map (Users, Holdings, Items, or Other to enter a path/URL), then for a
+legacy field name (or literal value) for each mappable field.
 
 Options:
   --no-text-annotation    Don't annotate the .txt key list with each field's
@@ -390,8 +391,7 @@ function build_and_prompt_object($node, $path, $silent) {
     }
 }
 
-[$inputPath, $loaded] = prompt_for_resource(
-    "Enter path or URL to the schema file: ",
+[$inputPath, $loaded] = prompt_for_schema_resource(
     function ($path) use ($HTTP_HEADERS) { return load_schema($path, $HTTP_HEADERS); }
 );
 [$schema, $outputDir, $outputStem, $repo] = $loaded;

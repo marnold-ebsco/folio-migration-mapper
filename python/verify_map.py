@@ -7,6 +7,7 @@ from lib.folio_schema_lib import (
     prompt_required,
     prompt_with_default,
     prompt_for_resource,
+    prompt_for_schema_resource,
     RefResolver,
     load_schema,
     build_key_lines,
@@ -20,8 +21,9 @@ Usage: verify_map.py [options]
 
 Builds an in-memory reference ("master") map straight from a FOLIO JSON
 schema, then runs 12 validation checks comparing it against an existing
-mapping file. Prompts for the schema file or URL, then for the path to the
-map file to verify.
+mapping file. Prompts you to pick the object to map (Users, Holdings,
+Items, or Other to enter a path/URL), then for the path to the map file to
+verify.
 
 Options:
   --no-text-annotation    Don't annotate the master .txt key list with each
@@ -156,9 +158,7 @@ def discover_arrays(node, path, seen):
 # counts for the master map, etc.) is derived automatically, with no
 # further prompts.
 
-input_path, (schema, output_dir, output_stem, repo) = prompt_for_resource(
-    "Enter path or URL to the schema file: ", load_schema
-)
+input_path, (schema, output_dir, output_stem, repo) = prompt_for_schema_resource(load_schema)
 
 # Blank stays in the mapping folder itself; a value creates that as a
 # subfolder of mapping, rather than replacing it.

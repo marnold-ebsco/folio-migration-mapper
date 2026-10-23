@@ -25,7 +25,7 @@ with schema loading, `$ref` resolution, and key-list building.
 ## create_map
 
 Interactively builds a mapping JSON file (and a plain key-list `.txt` file)
-from a FOLIO JSON schema. Prompts for the schema file or URL, then for the
+from a FOLIO JSON schema. Prompts for which object to map, then for the
 folder to save the maps to, then for a legacy field name (or a literal
 value) for each mappable field.
 
@@ -34,17 +34,34 @@ python3 python/create_map.py
 php php/create_map.php
 ```
 
-If the schema file or URL can't be found or read, you're re-prompted for it
-— up to 3 attempts in total before the script gives up and exits. Pressing
-enter with no input at any prompt exits immediately, with no further
-retries.
+The first prompt is a numbered menu:
+
+```
+Select the object to build a map for:
+  1) Users
+  2) Holdings
+  3) Items
+  4) Other (enter a URL)
+Choice [1-4]:
+```
+
+Options 1-3 map straight to a known FOLIO doc page URL (View 1, see below)
+for `mod-user-import`'s user-import schema, `mod-inventory-storage`'s
+holdings-storage schema, and its item-storage schema, respectively, with no
+further input needed. Option 4 ("Other") falls back to the original
+free-form prompt for any other schema file path or URL.
+
+An invalid choice, or a schema file/URL that can't be found or read, re-
+prompts from the top of this menu — up to 3 attempts in total before the
+script gives up and exits. Pressing enter with no input at any prompt exits
+immediately, with no further retries.
 
 The folder-to-save-to prompt defaults to `mapping` (in the same directory as
 the schema file, or the current directory for a URL) if you just press
 enter; entering a different folder name creates it if it doesn't already
 exist.
 
-When prompted for the schema, you can give:
+When choosing "Other" at the schema menu, you can give:
 
 - A local file path to a JSON schema
 - A raw schema URL
@@ -121,10 +138,11 @@ and `{stem}.txt`.
 
 Builds an in-memory reference ("master") map straight from a FOLIO JSON
 schema, then runs 12 checks comparing it against an existing mapping file.
-Prompts for the schema file or URL, then for the folder to save the master
-map/report to, then for the path to the map file to verify. The same
-retry-on-not-found (up to 3 attempts) and folder-creation behavior described
-under `create_map` above applies to all of these prompts.
+Prompts for which object to map (the same numbered menu as `create_map`,
+see above), then for the folder to save the master map/report to, then for
+the path to the map file to verify. The same retry-on-not-found/invalid-
+choice (up to 3 attempts) and folder-creation behavior described under
+`create_map` above applies to all of these prompts.
 
 ```bash
 python3 python/verify_map.py
