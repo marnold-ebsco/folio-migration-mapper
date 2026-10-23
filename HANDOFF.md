@@ -22,10 +22,10 @@ URLs — see README's "views" section). Shared logic lives in
 dependency-free YAML parser (`yaml_lite.py` / `.php`) for OpenAPI schemas.
 
 Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
-(no other branches currently exist). HEAD at `41c99c4`; working tree has
-**uncommitted changes** — see "Pending work" below.
+(no other branches currently exist). Working tree is clean as of this
+handoff, HEAD at `377248e` (pushed).
 
-## Pending work (uncommitted, as of 2026-10-23)
+## Schema-selection menu (most recent feature, 2026-10-23)
 
 The schema-source prompt (`"Enter path or URL to the schema file: "`) in
 all four scripts is now a numbered menu instead of a bare free-form prompt:
@@ -52,15 +52,17 @@ Smoke-tested in WSL: all three presets plus "Other" in both `create_map`
 and `verify_map`, Python and PHP, including an invalid-choice retry;
 Python/PHP output parity reconfirmed via `jq -S .` diff for Users, Holdings,
 and Items. README's `create_map`/`verify_map` sections updated to match.
-Not yet committed — review the diff and commit when ready.
+Committed (`377248e`) and pushed to `main`.
 
-## Current state of main (as of 2026-10-23)
+## Current state (as of 2026-10-23)
 
 Everything below has been committed and pushed to `main`. No open branches,
-no known bugs as of HEAD `41c99c4` (before the pending change above).
+no pending work, no known bugs.
 
 Recent commit history (newest first):
 
+- `377248e` — Add numbered menu (Users/Holdings/Items/Other) for schema
+  source prompt
 - `41c99c4` — Tighten description-only readonly detection to avoid false
   positives
 - `132c063` — Exclude readonly fields detected only via description text
@@ -146,8 +148,7 @@ to check).
 
 ## Next steps
 
-Review and commit the schema-selection-menu change described under
-"Pending work" above (currently uncommitted on `main`). No other open bugs
-or in-progress features. If resuming cold, re-run a quick paired Python/PHP
-smoke test (View 1 + View 4, `--map-template-only`) before making changes,
-to confirm the baseline is still green.
+None currently queued. No open bugs, no in-progress feature. If resuming
+cold, re-run a quick paired Python/PHP smoke test (View 1 + View 4,
+`--map-template-only`) before making changes, to confirm the baseline is
+still green.
