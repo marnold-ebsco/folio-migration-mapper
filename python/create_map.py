@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import sys
 
 from lib.folio_schema_lib import (
@@ -85,7 +84,6 @@ if "legacyIdentifier" not in schema["required"]:
 rows = []
 object_keys = []
 required_fields = []
-array_base_legacy = {}
 
 def build_description(subschema, is_required, required_if_used=False):
     base = subschema.get("description", "")
@@ -194,46 +192,17 @@ def next_prompt_number():
     prompted_count += 1
     return prompted_count
 
-# Prompts for a single leaf row. Rows that belong to an array (their
-# folio_field contains one or more "[N]" markers) share a single base
-# legacy name across all instances of that array: the first instance is
-# prompted normally (default "Not mapped") and, if a real name is given,
-# "_1" is appended to it. Every later instance re-uses that base name (with
-# its own "_N" suffix) as the suggested default, but is still prompted so
-# it can be overridden.
+# Prompts for a single leaf row. Every row -- including every instance of
+# an array field -- is prompted independently with a plain "Not mapped"
+# default. Nothing is ever guessed or suggested from a prior instance's
+# answer: whatever the user types (or the "Not mapped" default) is used
+# exactly as given, with no suffix appended.
 def prompt_leaf(row, is_required):
     folio_field = row["folio_field"]
     note = required_note(folio_field, is_required)
-    indices = re.findall(r"\[(\d+)\]", folio_field)
-    if not indices:
-        progress = f" (#{next_prompt_number()})"
-        answer = input(f"Enter legacy field for '{folio_field}'{progress}{note} [Not mapped]: ").strip()
-        apply_answer(row, answer if answer else "Not mapped")
-        return
-
-    template = re.sub(r"\[\d+\]", "", folio_field)
-    suffix = "_" + "_".join(indices)
-
-    if template not in array_base_legacy:
-        progress = f" (#{next_prompt_number()})"
-        answer = input(f"Enter legacy field for '{folio_field}'{progress}{note} [Not mapped]: ").strip()
-        base = answer if answer else "Not mapped"
-        array_base_legacy[template] = base
-        if base == "Not mapped":
-            row["legacy_field"] = "Not mapped"
-        elif parse_answer(base)[0] == "value":
-            apply_answer(row, base)
-        else:
-            row["legacy_field"] = base + suffix
-    else:
-        base = array_base_legacy[template]
-        if base == "Not mapped":
-            row["legacy_field"] = "Not mapped"
-        else:
-            suggestion = base if parse_answer(base)[0] == "value" else base + suffix
-            progress = f" (#{next_prompt_number()})"
-            answer = input(f"Enter legacy field for '{folio_field}'{progress}{note} [{suggestion}]: ").strip()
-            apply_answer(row, answer if answer else suggestion)
+    progress = f" (#{next_prompt_number()})"
+    answer = input(f"Enter legacy field for '{folio_field}'{progress}{note} [Not mapped]: ").strip()
+    apply_answer(row, answer if answer else "Not mapped")
 
 # Arrays are handled just-in-time: the "how many instances" question for a
 # given array is asked right when that array is reached, immediately before

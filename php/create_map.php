@@ -52,7 +52,6 @@ if ($emptyMap && ($compact || !$markMapped)) {
 $rows = [];
 $object_keys = [];
 $required_fields = [];
-$arrayBaseLegacy = [];
 
 function build_description($subschema, $isRequired, $requiredIfUsed = false) {
     $base = $subschema["description"] ?? "";
@@ -192,56 +191,18 @@ function next_prompt_number() {
     return $promptedCount;
 }
 
-// Prompts for a single leaf row. Rows that belong to an array (their
-// folio_field contains one or more "[N]" markers) share a single base
-// legacy name across all instances of that array: the first instance is
-// prompted normally (default "Not mapped") and, if a real name is given,
-// "_1" is appended to it. Every later instance re-uses that base name (with
-// its own "_N" suffix) as the suggested default, but is still prompted so
-// it can be overridden.
+// Prompts for a single leaf row. Every row -- including every instance of
+// an array field -- is prompted independently with a plain "Not mapped"
+// default. Nothing is ever guessed or suggested from a prior instance's
+// answer: whatever the user types (or the "Not mapped" default) is used
+// exactly as given, with no suffix appended.
 function prompt_leaf(&$row, $isRequired) {
-    global $arrayBaseLegacy;
     $folioField = $row["folio_field"];
     $note = required_note($folioField, $isRequired);
-    preg_match_all('/\[(\d+)\]/', $folioField, $indexMatches);
-    $indices = $indexMatches[1];
-
-    if (empty($indices)) {
-        $progress = " (#" . next_prompt_number() . ")";
-        echo "Enter legacy field for '$folioField'$progress$note [Not mapped]: ";
-        $answer = trim(fgets(STDIN));
-        apply_answer($row, $answer !== "" ? $answer : "Not mapped");
-        return;
-    }
-
-    $template = preg_replace('/\[\d+\]/', '', $folioField);
-    $suffix = "_" . implode("_", $indices);
-
-    if (!array_key_exists($template, $arrayBaseLegacy)) {
-        $progress = " (#" . next_prompt_number() . ")";
-        echo "Enter legacy field for '$folioField'$progress$note [Not mapped]: ";
-        $answer = trim(fgets(STDIN));
-        $base = $answer !== "" ? $answer : "Not mapped";
-        $arrayBaseLegacy[$template] = $base;
-        if ($base === "Not mapped") {
-            $row["legacy_field"] = "Not mapped";
-        } elseif (parse_answer($base)[0] === "value") {
-            apply_answer($row, $base);
-        } else {
-            $row["legacy_field"] = $base . $suffix;
-        }
-    } else {
-        $base = $arrayBaseLegacy[$template];
-        if ($base === "Not mapped") {
-            $row["legacy_field"] = "Not mapped";
-        } else {
-            $suggestion = parse_answer($base)[0] === "value" ? $base : $base . $suffix;
-            $progress = " (#" . next_prompt_number() . ")";
-            echo "Enter legacy field for '$folioField'$progress$note [$suggestion]: ";
-            $answer = trim(fgets(STDIN));
-            apply_answer($row, $answer !== "" ? $answer : $suggestion);
-        }
-    }
+    $progress = " (#" . next_prompt_number() . ")";
+    echo "Enter legacy field for '$folioField'$progress$note [Not mapped]: ";
+    $answer = trim(fgets(STDIN));
+    apply_answer($row, $answer !== "" ? $answer : "Not mapped");
 }
 
 // Arrays are handled just-in-time: the "how many instances" question for a

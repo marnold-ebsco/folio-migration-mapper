@@ -25,6 +25,21 @@ Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
 (no other branches currently exist). Working tree is clean as of this
 handoff, HEAD at `377248e` (pushed).
 
+## Array-instance prompting no longer guesses (2026-10-23)
+
+Every array-instance field (`notes[0].note`, `notes[1].note`, ...) is now
+prompted independently with a plain `[Not mapped]` default. Previously the
+first instance's answer was remembered as a "base" legacy name and later
+instances were suggested `base_1`, `base_2`, etc. as a default — a guess
+the user could silently accept by hitting Enter. That suggestion logic
+(`array_base_legacy` / `$arrayBaseLegacy`, the suffix-appending branch of
+`prompt_leaf()`) has been removed entirely in both `python/create_map.py`
+and `php/create_map.php`: whatever is typed (or "Not mapped" if left blank)
+is used exactly as given, with no suffix ever appended automatically.
+Smoke-tested against a synthetic 2-instance array schema in both languages,
+including leaving a later instance blank (correctly drops out, doesn't
+inherit anything). Not yet committed/pushed.
+
 ## Schema-selection menu (most recent feature, 2026-10-23)
 
 The schema-source prompt (`"Enter path or URL to the schema file: "`) in
