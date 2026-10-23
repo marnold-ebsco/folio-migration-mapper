@@ -238,8 +238,10 @@ def handle_array(sub, full_path, is_required, force_silent):
 # them is prompted first; if none end up mapped, the rest of the instance's
 # fields (including further nested arrays/objects) are auto-set to
 # "Not mapped" with no further prompting -- an unused required field means
-# the whole instance is unused. Nested arrays/objects otherwise recurse and
-# ask their own questions normally.
+# the whole instance is unused. Within an instance, all non-array fields
+# (leaves and nested plain objects) are prompted first, in alphabetical
+# order; array fields always come last, each announced with its own
+# "Switching to array fields" banner and a visible per-field break.
 def build_and_prompt_instance(node, path, silent):
     node_required = set(node.get("required", []))
     leaf_items, array_items, nested_obj_items = [], [], []
@@ -285,36 +287,60 @@ def build_and_prompt_instance(node, path, silent):
         else:
             prompt_leaf(row, False)
 
-    for key, sub in array_items:
-        handle_array(sub, f"{path}.{key}", key in node_required, force_silent=child_silent)
     for key, sub in nested_obj_items:
         build_and_prompt_object(sub, f"{path}.{key}", silent=child_silent)
 
+    if array_items and not child_silent:
+        print(f"\n--- Switching to array fields under '{path}' ---\n")
+    for key, sub in array_items:
+        if not child_silent:
+            print(f"--- {path}.{key} ---")
+        handle_array(sub, f"{path}.{key}", key in node_required, force_silent=child_silent)
+
 # Top-level schema and any plain (non-array) nested object. No batching or
-# reordering among siblings here -- each leaf is handled independently, in
-# schema order. (The "required means the rest gets skipped" behavior is
-# scoped to array instances, since unlike an array a plain object's fields
-# generally aren't optional as a group.)
+# reordering among leaves here -- each one is handled independently. (The
+# "required means the rest gets skipped" behavior is scoped to array
+# instances, since unlike an array a plain object's fields generally
+# aren't optional as a group.) Fields are split into two alphabetical
+# passes: all non-array fields (leaves and nested plain objects) first,
+# then all array fields, announced with a "Switching to array fields"
+# banner and a visible break before each one.
 def build_and_prompt_object(node, path, silent):
     node_required = set(node.get("required", []))
+    scalar_items, array_items = [], []
     for key, sub in sorted((node.get("properties") or {}).items()):
         if key == "metadata" or key == "_version" or is_readonly(sub):
             continue
         full_path = f"{path}.{key}" if path else key
-        is_required = key in node_required
         sub_type = sub.get("type")
         if sub_type == "array":
-            handle_array(sub, full_path, is_required, force_silent=silent)
+            array_items.append((key, sub, full_path))
         elif sub.get("properties"):
-            build_and_prompt_object(sub, full_path, silent)
+            scalar_items.append(("nested", key, sub, full_path))
         elif sub_type == "object":
             object_keys.append(full_path)
+        else:
+            scalar_items.append(("leaf", key, sub, full_path))
+
+    for kind, key, sub, full_path in scalar_items:
+        is_required = key in node_required
+        if kind == "nested":
+            build_and_prompt_object(sub, full_path, silent)
         else:
             row = build_row(full_path, sub, is_required)
             if silent:
                 auto_unmap(row)
             else:
                 prompt_leaf(row, is_required)
+
+    if array_items and not silent:
+        label = f" under '{path}'" if path else ""
+        print(f"\n--- Switching to array fields{label} ---\n")
+    for key, sub, full_path in array_items:
+        is_required = key in node_required
+        if not silent:
+            print(f"--- {full_path} ---")
+        handle_array(sub, full_path, is_required, force_silent=silent)
 
 # --map-template-only skips all interactive prompting: every field is included with
 # legacy_field left as "Not mapped" (reusing the same silent auto-unmap path

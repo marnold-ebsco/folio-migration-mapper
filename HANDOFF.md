@@ -25,6 +25,24 @@ Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
 (no other branches currently exist). Working tree is clean as of this
 handoff, HEAD at `377248e` (pushed).
 
+## Scalars-then-arrays prompt ordering (2026-10-23)
+
+Fields used to be prompted strictly in schema-alphabetical order, which
+interleaved scalar and array fields (e.g. `addresses` between `active` and
+`barcode`). Both `build_and_prompt_object()` and `build_and_prompt_instance()`
+(in `python/create_map.py` and `php/create_map.php`) now split each
+object's fields into two alphabetical passes: all non-array fields (plain
+leaves and nested plain objects) first, then all array fields. A
+`--- Switching to array fields ---` banner prints once before the array
+pass begins (skipped entirely in silent/`--map-template-only` runs, since
+those produce no prompts at all), and each individual array field gets its
+own `--- fieldName ---` break immediately before its "how many instances"
+prompt. Nested plain objects (e.g. `personal`) recurse and get the same
+scalars-then-arrays split internally. Smoke-tested against a synthetic
+schema mixing scalars, a nested plain object, and two array fields in both
+languages; prompt order and JSON output confirmed identical. Not yet
+committed/pushed.
+
 ## Array-instance prompting no longer guesses (2026-10-23)
 
 Every array-instance field (`notes[0].note`, `notes[1].note`, ...) is now

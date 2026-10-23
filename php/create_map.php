@@ -246,8 +246,10 @@ function handle_array($sub, $fullPath, $isRequired, $forceSilent) {
 // them is prompted first; if none end up mapped, the rest of the instance's
 // fields (including further nested arrays/objects) are auto-set to
 // "Not mapped" with no further prompting -- an unused required field means
-// the whole instance is unused. Nested arrays/objects otherwise recurse and
-// ask their own questions normally.
+// the whole instance is unused. Within an instance, all non-array fields
+// (leaves and nested plain objects) are prompted first, in alphabetical
+// order; array fields always come last, each announced with its own
+// "Switching to array fields" banner and a visible per-field break.
 function build_and_prompt_instance($node, $path, $silent) {
     global $object_keys, $rows;
     $nodeRequired = $node["required"] ?? [];
@@ -310,37 +312,58 @@ function build_and_prompt_instance($node, $path, $silent) {
         }
     }
 
-    foreach ($arrayItems as [$key, $sub]) {
-        handle_array($sub, "$path.$key", in_array($key, $nodeRequired), $childSilent);
-    }
     foreach ($nestedObjItems as [$key, $sub]) {
         build_and_prompt_object($sub, "$path.$key", $childSilent);
+    }
+
+    if (!empty($arrayItems) && !$childSilent) {
+        echo "\n--- Switching to array fields under '$path' ---\n\n";
+    }
+    foreach ($arrayItems as [$key, $sub]) {
+        if (!$childSilent) {
+            echo "--- $path.$key ---\n";
+        }
+        handle_array($sub, "$path.$key", in_array($key, $nodeRequired), $childSilent);
     }
 }
 
 // Top-level schema and any plain (non-array) nested object. No batching or
-// reordering among siblings here -- each leaf is handled independently, in
-// schema order. (The "required means the rest gets skipped" behavior is
-// scoped to array instances, since unlike an array a plain object's fields
-// generally aren't optional as a group.)
+// reordering among leaves here -- each one is handled independently. (The
+// "required means the rest gets skipped" behavior is scoped to array
+// instances, since unlike an array a plain object's fields generally
+// aren't optional as a group.) Fields are split into two alphabetical
+// passes: all non-array fields (leaves and nested plain objects) first,
+// then all array fields, announced with a "Switching to array fields"
+// banner and a visible break before each one.
 function build_and_prompt_object($node, $path, $silent) {
     global $object_keys, $rows;
     $nodeRequired = $node["required"] ?? [];
     $props = $node["properties"] ?? [];
     ksort($props);
+
+    $scalarItems = [];
+    $arrayItems = [];
     foreach ($props as $key => $sub) {
         if ($key === "metadata" || $key === "_version" || is_readonly($sub)) {
             continue;
         }
         $fullPath = $path ? "$path.$key" : $key;
-        $isRequired = in_array($key, $nodeRequired);
         $subType = $sub["type"] ?? null;
         if ($subType === "array") {
-            handle_array($sub, $fullPath, $isRequired, $silent);
+            $arrayItems[] = [$key, $sub, $fullPath];
         } elseif (!empty($sub["properties"])) {
-            build_and_prompt_object($sub, $fullPath, $silent);
+            $scalarItems[] = ["nested", $key, $sub, $fullPath];
         } elseif ($subType === "object") {
             $object_keys[] = $fullPath;
+        } else {
+            $scalarItems[] = ["leaf", $key, $sub, $fullPath];
+        }
+    }
+
+    foreach ($scalarItems as [$kind, $key, $sub, $fullPath]) {
+        $isRequired = in_array($key, $nodeRequired);
+        if ($kind === "nested") {
+            build_and_prompt_object($sub, $fullPath, $silent);
         } else {
             $rowIdx = build_row_index($fullPath, $sub, $isRequired);
             if ($silent) {
@@ -349,6 +372,18 @@ function build_and_prompt_object($node, $path, $silent) {
                 prompt_leaf($rows[$rowIdx], $isRequired);
             }
         }
+    }
+
+    if (!empty($arrayItems) && !$silent) {
+        $label = $path ? " under '$path'" : "";
+        echo "\n--- Switching to array fields$label ---\n\n";
+    }
+    foreach ($arrayItems as [$key, $sub, $fullPath]) {
+        $isRequired = in_array($key, $nodeRequired);
+        if (!$silent) {
+            echo "--- $fullPath ---\n";
+        }
+        handle_array($sub, $fullPath, $isRequired, $silent);
     }
 }
 
