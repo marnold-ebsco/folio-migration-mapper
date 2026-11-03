@@ -127,45 +127,47 @@ eventually merge to `main` for real.
   already made does *not* retroactively re-prompt that instance's sibling
   fields — you'd need to `#N` those individually too. User was told this
   up front when the feature was proposed.
-
-### Only on the picker branches (`legacy-field-picker` / `-php`)
-
-Depends on picker-only state (`data_columns`/`$dataColumns`,
-`data_usage_counts`/`$dataUsageCounts`, etc.) that doesn't exist on
-`main`:
-
-- **First prompt** (before the schema menu) asks for an optional TSV data
-  file; blank skips it and everything behaves exactly as it did before
-  this feature existed. Can also be given directly via `--data-file PATH`
-  to skip that prompt entirely — a bad/missing value exits immediately,
-  no retry (it's a fixed CLI argument, not something to retype). Python:
-  `load_data_file_columns()` + `prompt_for_data_file()` in
-  `folio_schema_lib.py`, shared between the interactive prompt and the
-  flag. PHP: same names in `folio_schema_lib.php`, using
-  `RuntimeException`/`InvalidArgumentException` where Python uses
-  `OSError`/`ValueError`.
-- **At each leaf prompt**, the file's header columns can be picked by
-  number instead of typed, with a `*` marker for already-used columns
-  (reuse is allowed, not removed from the pool), and `?`/`list` to
-  redisplay the grid. Python: `format_field_grid()` (width via
-  `shutil.get_terminal_size`). PHP: same name/shape, but PHP has no
-  `shutil` equivalent, so there's a new `get_terminal_width()` helper
-  (`COLUMNS` env var → `tput cols` → flat 80 fallback). An out-of-range
-  number re-prompts with a note rather than becoming a bogus literal
-  field name.
-- **At the array-count prompt**, `?` *also* shows the TSV columns (not
-  just the schema's field names) — the point is deciding, before sizing
-  an array, whether the file has anything worth mapping into it at all
-  (e.g. no URL-like column → don't bother mapping `electronicAccess`).
-- **End-of-run `<stem>_field_usage.log`** lists which columns were used
-  (and where) vs. unused.
-- **The `#N` correction command correctly re-/un-attributes TSV column
-  usage** when a correction changes which column (or none) a row maps to
-  — Python: `unrecord_usage()`; PHP: same name. Without this, correcting
-  a picked-column answer would double-count the old column in the usage
-  log. Verified in both languages: correcting a row from one column to
-  another releases the old column back to "unused" and attributes the
-  new one, nothing double-counted.
+- **Legacy-field picker from a TSV data file.** An optional first prompt
+  (before the schema menu) asks for a TSV data file to pick legacy field
+  names from instead of typing them; blank skips it and everything
+  behaves exactly as it did before this feature existed. Can also be
+  given directly via `--data-file PATH` to skip that prompt entirely — a
+  bad/missing value exits immediately, no retry (it's a fixed CLI
+  argument, not something to retype). Python: `load_data_file_columns()`
+  + `prompt_for_data_file()` in `folio_schema_lib.py`, shared between the
+  interactive prompt and the flag. PHP: same names in
+  `folio_schema_lib.php`, using `RuntimeException`/`InvalidArgumentException`
+  where Python uses `OSError`/`ValueError`. Once loaded, each leaf prompt
+  shows the file's header columns as a numbered grid — sorted
+  alphabetically/case-insensitively (added 2026-11-03 follow-up, so the
+  grid is easy to scan rather than listed in raw file-header order) —
+  and a column can be picked by number instead of typed, with a `*`
+  marker for already-used columns (reuse is allowed, not removed from
+  the pool) and `?`/`list` to redisplay the grid. Python:
+  `format_field_grid()` (width via `shutil.get_terminal_size`). PHP: same
+  name/shape, but PHP has no `shutil` equivalent, so there's a new
+  `get_terminal_width()` helper (`COLUMNS` env var → `tput cols` → flat
+  80 fallback). An out-of-range number re-prompts with a note rather than
+  becoming a bogus literal field name. At the array-count prompt, `?`
+  *also* shows this same column grid (not just the schema's field names)
+  — the point is deciding, before sizing an array, whether the file has
+  anything worth mapping into it at all (e.g. no URL-like column → don't
+  bother mapping `electronicAccess`). At the end of a run that used a
+  data file, `<stem>_field_usage.log` lists which columns were used (and
+  where) vs. unused. The `#N` correction command correctly re-/un-
+  attributes TSV column usage when a correction changes which column (or
+  none) a row maps to — Python: `unrecord_usage()`; PHP: same name.
+  Without this, correcting a picked-column answer would double-count the
+  old column in the usage log. Verified in both languages: correcting a
+  row from one column to another releases the old column back to
+  "unused" and attributes the new one, nothing double-counted. Originally
+  built on separate `legacy-field-picker`/`legacy-field-picker-php`
+  branches (depending on picker-only state — `data_columns`/
+  `$dataColumns`, `data_usage_counts`/`$dataUsageCounts`, etc. — that
+  didn't exist on `main` yet); both branches were merged into `main`
+  (`--no-ff`) and deleted in the 2026-11-03 follow-up noted at the top of
+  this file, so this is now just a normal part of both tools, documented
+  in README.md's "Legacy-field picker (TSV data file)" section.
 
 ### Verification performed (both languages, this session)
 
@@ -439,12 +441,10 @@ to check).
 3. ~~Merge both picker branches into `main` for real.~~ **Done** —
    both merged `--no-ff` and pushed, then both branches deleted locally
    and on `origin`.
-4. **Still open**: this file's picker section above (under "Only on the
-   picker branches") is written as session narrative, not a permanent
-   feature description, and still frames the picker as a separate
-   branch-only thing even though it's now just a normal part of `main`.
-   Worth folding into the main numbered feature list next time this file
-   gets a real edit pass, rather than leaving it here as a patch note.
+4. ~~Fold this file's picker section into the main numbered feature
+   list.~~ **Done** — the picker is now its own bullet under "On `main`
+   (both languages)" instead of a separate "Only on the picker branches"
+   section.
 5. ~~Consider whether `README.md` needs updating to document `--data-file`
    and the TSV picker.~~ **Done** — README now has a "Legacy-field picker
    (TSV data file)" section and a `--data-file` row in the options table,
