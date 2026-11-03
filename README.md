@@ -143,8 +143,6 @@ has no `readonly` attribute but says "(read only)" in its description).
 
 ### Legacy-field picker (TSV data file)
 
-**Python only** (`python/create_map.py`; not yet ported to the PHP tool).
-
 Before the schema menu, you're asked for an optional TSV data file to pick
 legacy field names from instead of typing them — blank skips this entirely
 and everything behaves exactly as described above. It can also be given
@@ -182,7 +180,7 @@ also written alongside the mapping files, listing which columns were used
 | `--no-text-annotation` | Don't annotate the `.txt` key list with each field's active mapping. Annotations (`fieldname  [legacy_field]`, `fieldname  ["value"]`, `fieldname  [<true>]`) are shown by default. |
 | `--compact` | Remove fields with no active mapping from both the `.txt` key list and the JSON map. Off by default (all fields are included in both). |
 | `--map-template-only` | A separate mode: skips all interactive prompting and writes one full map with every field present and `legacy_field` left as `"Not mapped"`. Ignores `--compact`/`--no-text-annotation` (with a notice), since a map with nothing mapped has nothing to compact or annotate. Instead, the `.txt` key list annotates each field with its schema shape: `fieldname  type: <type>`, plus `enum: opt1,opt2` if the field is an enum and `pattern: <pattern>` (or `pattern: UUID` for the standard UUID patterns) if it has one. |
-| `--data-file PATH` | Python only. Skip the "Enter path to a TSV data file..." prompt and use `PATH` directly as the legacy-field picker's column source. A bad/empty path exits immediately (no retry prompts, since this is a fixed command-line value, not something to retype). |
+| `--data-file PATH` | Skip the "Enter path to a TSV data file..." prompt and use `PATH` directly as the legacy-field picker's column source. A bad/empty path exits immediately (no retry prompts, since this is a fixed command-line value, not something to retype). |
 | `--help`, `-h` | Show usage and exit. |
 
 Output goes to the folder you chose (`mapping` by default) alongside the
