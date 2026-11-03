@@ -7,6 +7,7 @@ from lib.folio_schema_lib import (
     prompt_with_default,
     prompt_for_schema_resource,
     prompt_for_data_file,
+    load_data_file_columns,
     build_display_names,
     format_field_grid,
     RefResolver,
@@ -41,6 +42,11 @@ Options:
                           nothing mapped has nothing to compact or
                           annotate -- those two switches are ignored (with
                           a notice) if given alongside this one.
+  --data-file PATH        Skip the "Enter path to a TSV data file..."
+                          prompt and use PATH directly as the legacy-field
+                          picker's column source. A bad/empty path exits
+                          immediately (no retry prompts, since this is a
+                          fixed command-line value, not something to retype).
   --help, -h              Show this help message and exit.
 """
 
@@ -52,6 +58,14 @@ mark_mapped = "--no-text-annotation" not in sys.argv[1:]
 empty_map = "--map-template-only" in sys.argv[1:]
 compact = "--compact" in sys.argv[1:]
 
+data_file_arg = None
+if "--data-file" in sys.argv[1:]:
+    idx = sys.argv.index("--data-file")
+    if idx + 1 >= len(sys.argv):
+        print("Error: --data-file requires a value.", file=sys.stderr)
+        sys.exit(1)
+    data_file_arg = sys.argv[idx + 1]
+
 # --map-template-only is its own mode: nothing is ever mapped, so there's
 # nothing for --compact to remove or --no-text-annotation to suppress. Both
 # are ignored (rather than silently accepted as no-op combinations) so the
@@ -62,9 +76,21 @@ if empty_map and (compact or not mark_mapped):
     mark_mapped = True
 
 # Asked first, before anything else: a TSV data file to pick legacy fields
-# from instead of typing them. Blank skips it entirely -- everything below
-# behaves exactly as it did before this feature existed.
-data_file_result = prompt_for_data_file()
+# from instead of typing them. Blank (or --data-file omitted) skips it
+# entirely -- everything below behaves exactly as it did before this
+# feature existed.
+if data_file_arg is not None:
+    try:
+        data_file_result = (data_file_arg, load_data_file_columns(data_file_arg))
+    except OSError as e:
+        print(f"Error: couldn't read '{data_file_arg}': {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+else:
+    data_file_result = prompt_for_data_file()
+
 if data_file_result:
     data_file_path, data_columns = data_file_result
     data_display_names = build_display_names(data_columns)

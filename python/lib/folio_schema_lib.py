@@ -54,10 +54,21 @@ def prompt_with_default(prompt_text, default):
 
 
 # Reads just the first line of a TSV file and splits it into column names,
-# for the legacy-field picker. Blank input skips the picker entirely (the
-# caller falls back to plain free-text prompting). A bad path re-prompts up
-# to max_attempts times, same retry contract as prompt_for_resource, before
-# giving up and continuing without a data file.
+# for the legacy-field picker. Raises OSError if the file can't be opened,
+# or ValueError if it has no header line to read. Shared by the interactive
+# prompt below and --data-file, so both validate the same way.
+def load_data_file_columns(path):
+    with open(path, newline="") as f:
+        header = f.readline()
+    if not header.strip():
+        raise ValueError(f"'{path}' is empty.")
+    return [c.strip() for c in header.rstrip("\r\n").split("\t")]
+
+
+# Blank input skips the picker entirely (the caller falls back to plain
+# free-text prompting). A bad path re-prompts up to max_attempts times,
+# same retry contract as prompt_for_resource, before giving up and
+# continuing without a data file.
 def prompt_for_data_file(max_attempts=3):
     for attempt in range(1, max_attempts + 1):
         path = prompt_with_default(
@@ -66,17 +77,11 @@ def prompt_for_data_file(max_attempts=3):
         if not path:
             return None
         try:
-            with open(path, newline="") as f:
-                header = f.readline()
+            return path, load_data_file_columns(path)
         except OSError as e:
-            header = None
             print(f"Error: couldn't read '{path}': {e}", file=sys.stderr)
-        if header is not None and not header.strip():
-            header = None
-            print(f"Error: '{path}' is empty.", file=sys.stderr)
-        if header is not None:
-            columns = [c.strip() for c in header.rstrip("\r\n").split("\t")]
-            return path, columns
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
         remaining = max_attempts - attempt
         if remaining > 0:
             print(f"Please try again ({remaining} attempt{'s' if remaining != 1 else ''} left).", file=sys.stderr)
