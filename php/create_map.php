@@ -53,6 +53,16 @@ $rows = [];
 $object_keys = [];
 $required_fields = [];
 
+// Filled by build_and_prompt_object's top-level ($deferArrays=true) walk:
+// every array field reached while sweeping scalars -- no matter how deep in
+// nested plain objects -- is queued here instead of being prompted on the
+// spot, so it waits for the ENTIRE schema's scalar fields to be done first.
+// Handled as one batch, in discovery order, after that walk finishes (see
+// bottom of file). This is schema-wide, not just per nesting level: it's
+// what makes array prompts a single global "last" phase rather than each
+// object level getting its own early switch-over.
+$deferred_arrays = [];
+
 function build_description($subschema, $isRequired, $requiredIfUsed = false) {
     $base = $subschema["description"] ?? "";
     $enumVal = $subschema["enum"] ?? null;
@@ -174,10 +184,49 @@ function apply_answer(&$row, $resolved) {
     }
 }
 
-function ask_count($fullPath) {
-    echo "How many instances of '$fullPath' should be included in the map? [2]: ";
-    $response = trim(fgets(STDIN));
-    return $response !== "" ? (int)$response : 2;
+// Lists the fields each instance of an array would have, for "?" at the
+// "how many instances" prompt -- so you can see what you're about to map
+// before committing to a count. An array of objects lists its top-level
+// properties (same metadata/_version/readonly exclusions used everywhere
+// else); an array of scalars just names the single value's type, since
+// there's nothing else to list.
+function describe_array_item_fields($items) {
+    $props = $items["properties"] ?? null;
+    if (!$props) {
+        $itemType = $items["type"] ?? "unknown";
+        return "Each instance of this array is a single $itemType value (no sub-fields).";
+    }
+    ksort($props);
+    $lines = ["Fields in each instance:"];
+    foreach ($props as $key => $sub) {
+        if ($key === "metadata" || $key === "_version" || is_readonly($sub)) {
+            continue;
+        }
+        $subType = $sub["type"] ?? (!empty($sub["properties"]) ? "object" : "unknown");
+        if (is_array($subType)) {
+            $subType = implode(",", $subType);
+        }
+        $lines[] = "  $key ($subType)";
+    }
+    return implode("\n", $lines);
+}
+
+function ask_count($fullPath, $items) {
+    while (true) {
+        echo "How many instances of '$fullPath' should be included in the map? [2] (?=show fields): ";
+        $response = trim(fgets(STDIN));
+        if ($response === "") {
+            return 2;
+        }
+        if ($response === "?") {
+            echo describe_array_item_fields($items) . "\n";
+            continue;
+        }
+        if (ctype_digit($response)) {
+            return (int)$response;
+        }
+        fwrite(STDERR, "Error: '$response' isn't a whole number. Enter a number, or press enter for 2.\n");
+    }
 }
 
 // Since arrays are now sized just-in-time, the eventual total row count
@@ -191,18 +240,93 @@ function next_prompt_number() {
     return $promptedCount;
 }
 
+// Backs the "#N" correction command: every leaf prompt registers itself
+// here (rowIdx, isRequired) under its own number the moment it's first
+// asked, so a later prompt can jump back and re-run that exact question.
+// Stores the index into $rows rather than the row itself, since a plain
+// PHP array value wouldn't alias back into $rows the way a reference does.
+$prompt_registry = [];
+
+function describe_current_answer($row) {
+    if ($row["legacy_field"] !== "Not mapped") {
+        return "legacy field '" . $row["legacy_field"] . "'";
+    }
+    if ($row["value"] !== "" && $row["value"] !== null) {
+        return "literal " . json_encode($row["value"]);
+    }
+    return "Not mapped";
+}
+
+// Shown once, the first time any leaf prompt appears -- not on every one,
+// since that would be noisy across a schema with 100+ fields.
+$correction_hint_shown = false;
+
+// The actual input loop for one leaf prompt, shared by a fresh prompt and
+// a "#N" correction re-ask of an already-answered one. On a fresh prompt,
+// blank means "Not mapped" (unchanged default). On a correction, blank
+// means "leave it as it is" instead -- jumping back to double-check an
+// answer shouldn't risk silently wiping it if you just hit enter.
+//
+// "#N" is checked first, ahead of the normal answer handling, so it works
+// the same whether you're answering for the first time or mid-correction
+// (nested "#N" within a correction just recurses one level deeper, which
+// is fine for interactive use).
+function ask_leaf($number, &$row, $isRequired, $isCorrection = false) {
+    global $correction_hint_shown, $prompt_registry, $rows;
+    $folioField = $row["folio_field"];
+    $note = required_note($folioField, $isRequired);
+    if (!$correction_hint_shown) {
+        echo "(Tip: type #N at any prompt to jump back and correct prompt number N's answer.)\n";
+        $correction_hint_shown = true;
+    }
+    while (true) {
+        $defaultDesc = $isCorrection
+            ? "[current: " . describe_current_answer($row) . ", blank keeps it]"
+            : "[Not mapped]";
+        echo "Enter legacy field for '$folioField' (#$number)$note $defaultDesc: ";
+        $answer = trim(fgets(STDIN));
+
+        if (strlen($answer) > 1 && $answer[0] === "#" && ctype_digit(substr($answer, 1))) {
+            $targetN = (int)substr($answer, 1);
+            $entry = $prompt_registry[$targetN] ?? null;
+            if ($entry === null) {
+                fwrite(STDERR, "Error: there's no prompt #$targetN yet.\n");
+            } else {
+                [$targetIdx, $targetRequired] = $entry;
+                echo "--- Correcting #$targetN ('" . $rows[$targetIdx]["folio_field"] . "'); current answer: " . describe_current_answer($rows[$targetIdx]) . " ---\n";
+                ask_leaf($targetN, $rows[$targetIdx], $targetRequired, true);
+                echo "--- Back to #$number ---\n";
+            }
+            continue;
+        }
+
+        if ($answer === "") {
+            if (!$isCorrection) {
+                apply_answer($row, "Not mapped");
+            }
+            return;
+        }
+
+        apply_answer($row, $answer);
+        return;
+    }
+}
+
 // Prompts for a single leaf row. Every row -- including every instance of
 // an array field -- is prompted independently with a plain "Not mapped"
 // default. Nothing is ever guessed or suggested from a prior instance's
 // answer: whatever the user types (or the "Not mapped" default) is used
 // exactly as given, with no suffix appended.
-function prompt_leaf(&$row, $isRequired) {
-    $folioField = $row["folio_field"];
-    $note = required_note($folioField, $isRequired);
-    $progress = " (#" . next_prompt_number() . ")";
-    echo "Enter legacy field for '$folioField'$progress$note [Not mapped]: ";
-    $answer = trim(fgets(STDIN));
-    apply_answer($row, $answer !== "" ? $answer : "Not mapped");
+//
+// Takes $rowIdx (every call site already has it from build_row_index's
+// return value) rather than the row itself, so the index -- not just a
+// disconnected copy -- is what gets stored in $prompt_registry for later
+// "#N" corrections to reach back into $rows by reference.
+function prompt_leaf($rowIdx, $isRequired) {
+    global $prompt_registry, $rows;
+    $number = next_prompt_number();
+    $prompt_registry[$number] = [$rowIdx, $isRequired];
+    ask_leaf($number, $rows[$rowIdx], $isRequired);
 }
 
 // Arrays are handled just-in-time: the "how many instances" question for a
@@ -214,7 +338,7 @@ function prompt_leaf(&$row, $isRequired) {
 function handle_array($sub, $fullPath, $isRequired, $forceSilent) {
     global $object_keys, $rows;
     $items = $sub["items"] ?? [];
-    $count = $forceSilent ? 0 : ask_count($fullPath);
+    $count = $forceSilent ? 0 : ask_count($fullPath, $items);
     $effectiveCount = $count > 0 ? $count : 1;
     $childSilent = $forceSilent || $count === 0;
 
@@ -235,7 +359,7 @@ function handle_array($sub, $fullPath, $isRequired, $forceSilent) {
             if ($childSilent) {
                 auto_unmap($rows[$rowIdx]);
             } else {
-                prompt_leaf($rows[$rowIdx], $isRequired);
+                prompt_leaf($rowIdx, $isRequired);
             }
         }
     }
@@ -284,7 +408,7 @@ function build_and_prompt_instance($node, $path, $silent) {
             handle_array($sub, "$path.$key", in_array($key, $nodeRequired), true);
         }
         foreach ($nestedObjItems as [$key, $sub]) {
-            build_and_prompt_object($sub, "$path.$key", true);
+            build_and_prompt_object($sub, "$path.$key", true, false);
         }
         return;
     }
@@ -295,7 +419,7 @@ function build_and_prompt_instance($node, $path, $silent) {
     $anyRequiredMapped = false;
     foreach ($requiredLeaves as [$key, $sub]) {
         $rowIdx = build_row_index("$path.$key", $sub, true);
-        prompt_leaf($rows[$rowIdx], true);
+        prompt_leaf($rowIdx, true);
         if (!is_unmapped_row($rows[$rowIdx])) {
             $anyRequiredMapped = true;
         }
@@ -308,12 +432,12 @@ function build_and_prompt_instance($node, $path, $silent) {
         if ($childSilent) {
             auto_unmap($rows[$rowIdx]);
         } else {
-            prompt_leaf($rows[$rowIdx], false);
+            prompt_leaf($rowIdx, false);
         }
     }
 
     foreach ($nestedObjItems as [$key, $sub]) {
-        build_and_prompt_object($sub, "$path.$key", $childSilent);
+        build_and_prompt_object($sub, "$path.$key", $childSilent, false);
     }
 
     if (!empty($arrayItems) && !$childSilent) {
@@ -333,10 +457,26 @@ function build_and_prompt_instance($node, $path, $silent) {
 // instances, since unlike an array a plain object's fields generally
 // aren't optional as a group.) Fields are split into two alphabetical
 // passes: all non-array fields (leaves and nested plain objects) first,
-// then all array fields, announced with a "Switching to array fields"
-// banner and a visible break before each one.
-function build_and_prompt_object($node, $path, $silent) {
-    global $object_keys, $rows;
+// then all array fields.
+//
+// $deferArrays controls where that second group goes:
+//   - true (the default, used for the top-level walk starting from the
+//     schema root): array fields are queued onto the module-level
+//     $deferred_arrays list instead of being prompted here, and nested
+//     plain objects are recursed into with $deferArrays still true -- so
+//     every array anywhere in the schema, at any depth, waits for the
+//     whole schema's scalar sweep to finish. They're all handled
+//     together, after one banner, once that walk returns (see bottom of
+//     file).
+//   - false: the original immediate, per-level behavior -- this level's
+//     own array fields are handled right here, with their own local
+//     "Switching to array fields" banner. Used when
+//     build_and_prompt_object is called for a nested plain object
+//     *inside* an array instance (build_and_prompt_instance): by that
+//     point the global scalar/array split has already happened, so
+//     further nesting just behaves as before.
+function build_and_prompt_object($node, $path, $silent, $deferArrays = true) {
+    global $object_keys, $rows, $deferred_arrays;
     $nodeRequired = $node["required"] ?? [];
     $props = $node["properties"] ?? [];
     ksort($props);
@@ -363,15 +503,22 @@ function build_and_prompt_object($node, $path, $silent) {
     foreach ($scalarItems as [$kind, $key, $sub, $fullPath]) {
         $isRequired = in_array($key, $nodeRequired);
         if ($kind === "nested") {
-            build_and_prompt_object($sub, $fullPath, $silent);
+            build_and_prompt_object($sub, $fullPath, $silent, $deferArrays);
         } else {
             $rowIdx = build_row_index($fullPath, $sub, $isRequired);
             if ($silent) {
                 auto_unmap($rows[$rowIdx]);
             } else {
-                prompt_leaf($rows[$rowIdx], $isRequired);
+                prompt_leaf($rowIdx, $isRequired);
             }
         }
+    }
+
+    if ($deferArrays) {
+        foreach ($arrayItems as [$key, $sub, $fullPath]) {
+            $deferred_arrays[] = [$fullPath, $sub, in_array($key, $nodeRequired), $silent];
+        }
+        return;
     }
 
     if (!empty($arrayItems) && !$silent) {
@@ -430,6 +577,19 @@ $outputPath = $mappingDir . "/" . $outputStem . "_mapping.json";
 // already used for unused/skipped array instances).
 build_and_prompt_object($schema, "", $emptyMap);
 
+// Every array field queued during that walk ($deferred_arrays), handled as
+// one global batch now that the schema's entire scalar sweep is done --
+// this is the single schema-wide "Switching to array fields" moment.
+if (!empty($deferred_arrays) && !$emptyMap) {
+    echo "\n--- Switching to array fields ---\n\n";
+}
+foreach ($deferred_arrays as [$fullPath, $sub, $isRequired, $silent]) {
+    if (!$silent) {
+        echo "--- $fullPath ---\n";
+    }
+    handle_array($sub, $fullPath, $isRequired, $silent);
+}
+
 foreach ($rows as &$row) {
     if ($row["folio_field"] === "legacyIdentifier") {
         $row["description"] = "not part of FOLIO schema. Added to work with folio_migration_tools";
@@ -465,3 +625,17 @@ if (!empty($object_keys)) {
     echo "\n";
 }
 echo "Wrote key list to $keyListPath\n";
+
+// REQUIRED (unconditional) fields left "Not mapped" are worth flagging --
+// unlike "REQUIRED if used" fields inside an array instance, which are
+// routinely left unmapped whenever that instance goes unused (by design,
+// not a gap), an unconditional REQUIRED field being unmapped is always
+// worth a second look. This is informational only -- nothing earlier in
+// the script stops you from leaving a required field unmapped.
+$unmappedRequired = array_values(array_filter($required_fields, function ($f) use ($rowsByField) {
+    return strpos($f, "[") === false && is_unmapped_row($rowsByField[$f]);
+}));
+if (!empty($unmappedRequired)) {
+    echo "\n";
+    echo "Warning: these REQUIRED fields were left \"Not mapped\": " . implode(", ", $unmappedRequired) . "\n";
+}
