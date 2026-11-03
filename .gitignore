@@ -5,3 +5,5 @@
 __pycache__/
 spareparts/
 folio-migration-mapper.code-workspace
+/working/
+.venv/
