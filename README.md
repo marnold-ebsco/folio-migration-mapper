@@ -151,9 +151,10 @@ there exits immediately with no retry, since it's a fixed command-line
 value rather than something to retype.
 
 Once a data file is loaded, each field prompt shows a numbered grid of the
-file's header columns (a `*` marks a column already used at least once —
-reuse is allowed, columns aren't removed from the pool). At that prompt
-you can enter:
+file's header columns, sorted alphabetically (case-insensitively, not the
+file's original column order) to make a specific column easier to find (a
+`*` marks a column already used at least once — reuse is allowed, columns
+aren't removed from the pool). At that prompt you can enter:
 
 - A column number, to map that field to the matching column
 - A legacy field name, quoted literal, or `true`/`false`, exactly as

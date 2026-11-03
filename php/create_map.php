@@ -84,6 +84,11 @@ if ($dataFileArg !== null) {
 
 if ($dataFileResult !== null) {
     [$dataFilePath, $dataColumns] = $dataFileResult;
+    // Sorted alphabetically (case-insensitively) for display/picking, so the
+    // grid is easier to scan than raw file-header order -- this is the one
+    // and only point $dataColumns gets reordered; every other array derived
+    // from it (display names, usage tracking) is built after, in this order.
+    usort($dataColumns, fn($a, $b) => strcasecmp($a, $b));
     $dataDisplayNames = build_display_names($dataColumns);
     $dataUsageCounts = array_fill(0, count($dataColumns), 0);
     $dataUsageFields = array_fill(0, count($dataColumns), []);

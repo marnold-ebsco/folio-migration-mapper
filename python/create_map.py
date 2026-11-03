@@ -93,6 +93,11 @@ else:
 
 if data_file_result:
     data_file_path, data_columns = data_file_result
+    # Sorted alphabetically (case-insensitively) for display/picking, so the
+    # grid is easier to scan than raw file-header order -- this is the one
+    # and only point data_columns gets reordered; every other list derived
+    # from it (display names, usage tracking) is built after, in this order.
+    data_columns = sorted(data_columns, key=str.lower)
     data_display_names = build_display_names(data_columns)
     data_usage_counts = [0] * len(data_columns)
     data_usage_fields = [[] for _ in data_columns]
