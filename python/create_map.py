@@ -259,6 +259,14 @@ def ask_count(full_path, items):
             return 2
         if response == "?":
             print(describe_array_item_fields(items))
+            if data_columns:
+                # Also show what's actually in the data file -- knowing the
+                # schema's field names isn't enough to decide whether this
+                # array is worth mapping at all (e.g. no point in sizing
+                # electronicAccess if there's no URL-like column to map its
+                # 'uri' field from).
+                print()
+                print(format_field_grid(data_columns, data_display_names, data_usage_counts))
             continue
         try:
             return int(response)
