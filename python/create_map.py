@@ -293,7 +293,11 @@ def unrecord_usage(folio_field, previous_value):
 # "#N" is checked first, ahead of the normal answer handling, so it works
 # the same whether you're answering for the first time or mid-correction
 # (nested "#N" within a correction just recurses one level deeper, which
-# is fine for interactive use).
+# is fine for interactive use). When a data file is loaded, a bare number
+# is always resolved as a picker index, not as literal text -- an
+# out-of-range number (e.g. "0", or past the end of the list) is a
+# mistake, not a hardcoded field name, so it re-prompts with a note
+# rather than silently becoming legacy_field "0".
 def ask_leaf(number, row, is_required, is_correction=False):
     global grid_shown, correction_hint_shown
     folio_field = row["folio_field"]
@@ -327,24 +331,27 @@ def ask_leaf(number, row, is_required, is_correction=False):
                 print(f"--- Back to #{number} ---")
             continue
 
+        if data_columns and answer.isdigit():
+            idx = int(answer)
+            if not (1 <= idx <= len(data_columns)):
+                print(
+                    f"Note: {idx} is out of range (1-{len(data_columns)}); enter a number from the list, "
+                    "a field name, a quoted literal, true/false, or press enter to keep/clear it.",
+                    file=sys.stderr,
+                )
+                continue
+            answer = data_columns[idx - 1]
+
         if not answer:
             if not is_correction:
                 unrecord_usage(folio_field, row["legacy_field"])
                 apply_answer(row, "Not mapped")
             return
 
-        resolved = answer
-        if data_columns and resolved.isdigit():
-            idx = int(resolved)
-            if 1 <= idx <= len(data_columns):
-                resolved = data_columns[idx - 1]
-            else:
-                print(f"Note: {idx} is out of range (1-{len(data_columns)}); treating it as a literal field name instead.", file=sys.stderr)
-
         unrecord_usage(folio_field, row["legacy_field"])
-        apply_answer(row, resolved)
+        apply_answer(row, answer)
         if not is_unmapped_row(row):
-            record_usage(folio_field, resolved)
+            record_usage(folio_field, answer)
         return
 
 # Prompts for a single leaf row. Every row -- including every instance of
