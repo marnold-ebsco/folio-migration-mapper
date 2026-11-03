@@ -21,7 +21,19 @@ URLs — see README's "views" section). Shared logic lives in
 `folio_schema_lib.py` / `folio_schema_lib.php` plus a hand-rolled
 dependency-free YAML parser (`yaml_lite.py` / `.php`) for OpenAPI schemas.
 
-Repo: `github.com:marnold-ebsco/folio-migration-mapper`. **As of this
+Repo: `github.com:marnold-ebsco/folio-migration-mapper`. **Update
+(2026-11-03 follow-up): both picker branches below have since been
+merged into `main` (`--no-ff`, one merge commit per branch, Python first)
+and pushed, and the now-merged `legacy-field-picker` /
+`legacy-field-picker-php` branches have been deleted both locally and on
+`origin`.** `main` is now the only branch and has everything described
+in this file, including the TSV legacy-field picker, in both Python and
+PHP. README.md was also updated in the same pass to document `--data-file`
+and the picker (closing out Next-steps items 3 and 5 below). The original
+end-of-session note is left as-is beneath this update for the history of
+*why* the branches existed and what they each covered.
+
+Original note, written before the merge/cleanup above: **As of this
 handoff (2026-11-03/04 session) there are three relevant branches, all
 pushed to origin, all working trees clean:**
 
@@ -34,14 +46,17 @@ pushed to origin, all working trees clean:**
   i.e. it does **not** yet have that `.gitignore` fix; harmless, just
   don't be surprised by `working/`/`.venv/` showing as untracked there).
   **Not yet merged to `main` for real** (deliberately — see "Next steps").
+  — **merged into `main` and deleted as of the follow-up above.**
 - **`legacy-field-picker-php`** — HEAD `5a414c4`. PHP port of the picker,
   branched from `main` *after* all the PHP main-fixes above were merged
   in, and does have the `.gitignore` fix. Also not yet merged to `main`.
-- This working copy is currently checked out on **`legacy-field-picker-php`**.
+  — **merged into `main` and deleted as of the follow-up above.**
+- This working copy is currently checked out on **`legacy-field-picker-php`**
+  — stale; the branch no longer exists, so the working copy is now on `main`.
 
 (If those HEAD hashes look stale when you read this, trust `git log
---oneline -1 <branch>` over this file — this is a point-in-time note, not
-a live pointer.)
+--oneline -1 main` over this file — this is a point-in-time note, not a
+live pointer.)
 
 ## Everything built this session (2026-11-03/04)
 
@@ -405,31 +420,36 @@ readonly-exclusion audit above). Set `GITHUB_TOKEN` before heavy testing,
 or just wait out the hourly reset (`curl -s https://api.github.com/rate_limit`
 to check).
 
-## Next steps (as of 2026-11-04 — supersedes the paragraph above)
+## Next steps (as of 2026-11-04 — supersedes the paragraph above; see the
+2026-11-03 follow-up note near the top for what's changed since)
 
-1. **Check in with the user about their own manual testing of
-   `legacy-field-picker` (Python)** before touching that branch further —
-   they said "testing now" partway through this session and may have
-   found issues not reflected here. This session's own verification was
-   scripted/piped, not interactive.
-2. **Decide whether the real-Holdings-schema `?`-preview check needs
-   re-running against PHP** (it was only done against Python this
-   session; PHP parity was inferred from identical code shape against a
-   synthetic schema, not independently re-verified against the real
-   schema).
-3. **Merge both picker branches into `main` for real** once (1) and (2)
-   are resolved and the user is satisfied — right now they're rebased
-   onto `main`, not merged, by design (kept separate so the picker
-   feature itself stays easy to back out if needed).
-4. Once merged, this file's picker section above should probably get
-   folded into the main numbered feature list the way `main`'s other
-   features are (right now it's written as a session narrative, not a
-   permanent feature description — fine for now, but it'll read oddly
-   once the picker is just "a normal part of the tool").
-5. Consider whether `README.md` needs updating to document `--data-file`
-   and the TSV picker (README currently only documents pre-this-session
-   behavior) — not done yet, deliberately deferred until the branches are
-   closer to merging.
+1. ~~Check in with the user about their own manual testing of
+   `legacy-field-picker` (Python) before touching that branch further.~~
+   **Moot** — the user directed the merge explicitly in the follow-up
+   session despite this caveat being raised; no separate sign-off was
+   given on their own interactive testing specifically, so if anything
+   surfaces from that testing later, treat it as a normal post-merge bug
+   report against `main` rather than something that should have blocked
+   the merge.
+2. **Still open**: the real-Holdings-schema `?`-preview check was never
+   re-run against PHP independently (it was only done against Python;
+   PHP parity was inferred from identical code shape against a synthetic
+   schema). Worth doing if the PHP picker's `?`-preview output is ever in
+   question.
+3. ~~Merge both picker branches into `main` for real.~~ **Done** —
+   both merged `--no-ff` and pushed, then both branches deleted locally
+   and on `origin`.
+4. **Still open**: this file's picker section above (under "Only on the
+   picker branches") is written as session narrative, not a permanent
+   feature description, and still frames the picker as a separate
+   branch-only thing even though it's now just a normal part of `main`.
+   Worth folding into the main numbered feature list next time this file
+   gets a real edit pass, rather than leaving it here as a patch note.
+5. ~~Consider whether `README.md` needs updating to document `--data-file`
+   and the TSV picker.~~ **Done** — README now has a "Legacy-field picker
+   (TSV data file)" section and a `--data-file` row in the options table,
+   covering both languages (no longer Python-only language anywhere in
+   README).
 
 If resuming cold on something **unrelated** to all of the above instead,
 re-run a quick paired Python/PHP smoke test (View 1 + View 4,
