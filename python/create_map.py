@@ -85,6 +85,16 @@ rows = []
 object_keys = []
 required_fields = []
 
+# Filled by build_and_prompt_object's top-level (defer_arrays=True) walk:
+# every array field reached while sweeping scalars -- no matter how deep in
+# nested plain objects -- is queued here instead of being prompted on the
+# spot, so it waits for the ENTIRE schema's scalar fields to be done first.
+# Handled as one batch, in discovery order, after that walk finishes (see
+# bottom of file). This is schema-wide, not just per nesting level: it's
+# what makes array prompts a single global "last" phase rather than each
+# object level getting its own early switch-over.
+deferred_arrays = []
+
 def build_description(subschema, is_required, required_if_used=False):
     base = subschema.get("description", "")
     enum_val = subschema.get("enum")
@@ -265,7 +275,7 @@ def build_and_prompt_instance(node, path, silent):
         for key, sub in array_items:
             handle_array(sub, f"{path}.{key}", key in node_required, force_silent=True)
         for key, sub in nested_obj_items:
-            build_and_prompt_object(sub, f"{path}.{key}", silent=True)
+            build_and_prompt_object(sub, f"{path}.{key}", silent=True, defer_arrays=False)
         return
 
     required_leaves = [(k, s) for k, s in leaf_items if k in node_required]
@@ -288,7 +298,7 @@ def build_and_prompt_instance(node, path, silent):
             prompt_leaf(row, False)
 
     for key, sub in nested_obj_items:
-        build_and_prompt_object(sub, f"{path}.{key}", silent=child_silent)
+        build_and_prompt_object(sub, f"{path}.{key}", silent=child_silent, defer_arrays=False)
 
     if array_items and not child_silent:
         print(f"\n--- Switching to array fields under '{path}' ---\n")
@@ -302,10 +312,24 @@ def build_and_prompt_instance(node, path, silent):
 # "required means the rest gets skipped" behavior is scoped to array
 # instances, since unlike an array a plain object's fields generally
 # aren't optional as a group.) Fields are split into two alphabetical
-# passes: all non-array fields (leaves and nested plain objects) first,
-# then all array fields, announced with a "Switching to array fields"
-# banner and a visible break before each one.
-def build_and_prompt_object(node, path, silent):
+# groups: all non-array fields (leaves and nested plain objects) first,
+# then all array fields.
+#
+# defer_arrays controls where that second group goes:
+#   - True (the default, used for the top-level walk starting from the
+#     schema root): array fields are queued onto the module-level
+#     deferred_arrays list instead of being prompted here, and nested plain
+#     objects are recursed into with defer_arrays still True -- so every
+#     array anywhere in the schema, at any depth, waits for the whole
+#     schema's scalar sweep to finish. They're all handled together, after
+#     one banner, once that walk returns (see bottom of file).
+#   - False: the original immediate, per-level behavior -- this level's own
+#     array fields are handled right here, with their own local "Switching
+#     to array fields" banner. Used when build_and_prompt_object is called
+#     for a nested plain object *inside* an array instance
+#     (build_and_prompt_instance): by that point the global scalar/array
+#     split has already happened, so further nesting just behaves as before.
+def build_and_prompt_object(node, path, silent, defer_arrays=True):
     node_required = set(node.get("required", []))
     scalar_items, array_items = [], []
     for key, sub in sorted((node.get("properties") or {}).items()):
@@ -325,13 +349,18 @@ def build_and_prompt_object(node, path, silent):
     for kind, key, sub, full_path in scalar_items:
         is_required = key in node_required
         if kind == "nested":
-            build_and_prompt_object(sub, full_path, silent)
+            build_and_prompt_object(sub, full_path, silent, defer_arrays=defer_arrays)
         else:
             row = build_row(full_path, sub, is_required)
             if silent:
                 auto_unmap(row)
             else:
                 prompt_leaf(row, is_required)
+
+    if defer_arrays:
+        for key, sub, full_path in array_items:
+            deferred_arrays.append((full_path, sub, key in node_required, silent))
+        return
 
     if array_items and not silent:
         label = f" under '{path}'" if path else ""
@@ -346,6 +375,16 @@ def build_and_prompt_object(node, path, silent):
 # legacy_field left as "Not mapped" (reusing the same silent auto-unmap path
 # already used for unused/skipped array instances).
 build_and_prompt_object(schema, "", silent=empty_map)
+
+# Every array field queued during that walk (deferred_arrays), handled as
+# one global batch now that the schema's entire scalar sweep is done --
+# this is the single schema-wide "Switching to array fields" moment.
+if deferred_arrays and not empty_map:
+    print("\n--- Switching to array fields ---\n")
+for full_path, sub, is_required, silent in deferred_arrays:
+    if not silent:
+        print(f"--- {full_path} ---")
+    handle_array(sub, full_path, is_required, force_silent=silent)
 
 for row in rows:
     if row["folio_field"] == "legacyIdentifier":
