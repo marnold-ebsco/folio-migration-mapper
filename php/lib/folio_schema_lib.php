@@ -33,6 +33,108 @@ function prompt_with_default($promptText, $default) {
     return $value !== "" ? $value : $default;
 }
 
+// Reads just the first line of a TSV file and splits it into column names,
+// for the legacy-field picker. Throws RuntimeException if the file can't
+// be opened, or InvalidArgumentException if it has no header line to
+// read. Shared by the interactive prompt below and --data-file, so both
+// validate the same way.
+function load_data_file_columns($path) {
+    $f = @fopen($path, "r");
+    if ($f === false) {
+        $error = error_get_last();
+        throw new RuntimeException($error["message"] ?? "could not open file");
+    }
+    $header = fgets($f);
+    fclose($f);
+    if ($header === false || trim($header) === "") {
+        throw new InvalidArgumentException("'$path' is empty.");
+    }
+    return array_map("trim", explode("\t", rtrim($header, "\r\n")));
+}
+
+// Blank input skips the picker entirely (the caller falls back to plain
+// free-text prompting). A bad path re-prompts up to $maxAttempts times,
+// same retry contract as prompt_for_resource, before giving up and
+// continuing without a data file.
+function prompt_for_data_file($maxAttempts = 3) {
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        $path = prompt_with_default("Enter path to a TSV data file to pick legacy fields from (blank to skip): ", "");
+        if ($path === "") {
+            return null;
+        }
+        try {
+            return [$path, load_data_file_columns($path)];
+        } catch (RuntimeException $e) {
+            fwrite(STDERR, "Error: couldn't read '$path': " . $e->getMessage() . "\n");
+        } catch (InvalidArgumentException $e) {
+            fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+        }
+        $remaining = $maxAttempts - $attempt;
+        if ($remaining > 0) {
+            fwrite(STDERR, "Please try again ($remaining attempt" . ($remaining !== 1 ? "s" : "") . " left).\n");
+        } else {
+            fwrite(STDERR, "Too many failed attempts. Continuing without a data file.\n");
+        }
+    }
+    return null;
+}
+
+// Disambiguates a TSV header that repeats a column name (malformed, but it
+// happens) by suffixing later repeats with "#2", "#3", etc. -- for display
+// only. The underlying column name used for matching/output stays the plain
+// one for every occurrence; this just keeps the picker's grid legible.
+function build_display_names($columns) {
+    $seen = [];
+    $display = [];
+    foreach ($columns as $c) {
+        $seen[$c] = ($seen[$c] ?? 0) + 1;
+        $display[] = $seen[$c] === 1 ? $c : "$c#{$seen[$c]}";
+    }
+    return $display;
+}
+
+// shutil.get_terminal_size()'s PHP equivalent: the COLUMNS env var (set by
+// most interactive shells), falling back to `tput cols` (reads the
+// controlling terminal directly), falling back to a flat 80 if neither is
+// available (e.g. output isn't a tty).
+function get_terminal_width() {
+    $cols = getenv("COLUMNS");
+    if ($cols !== false && ctype_digit($cols)) {
+        return (int)$cols;
+    }
+    $output = [];
+    exec("tput cols 2>/dev/null", $output);
+    if (!empty($output) && ctype_digit($output[0])) {
+        return (int)$output[0];
+    }
+    return 80;
+}
+
+// Renders the numbered field-picker grid, wrapped to the terminal width. A
+// "*" right after a column's number marks it as already used at least
+// once; fields stay in the grid and keep being selectable after that,
+// since reuse is allowed.
+function format_field_grid($columns, $displayNames, $usageCounts, $width = null) {
+    if ($width === null) {
+        $width = get_terminal_width();
+    }
+    $entries = [];
+    foreach ($displayNames as $i0 => $label) {
+        $marker = $usageCounts[$i0] ? "*" : " ";
+        $entries[] = sprintf("%2d%s%s", $i0 + 1, $marker, $label);
+    }
+    $colWidth = max(array_map("strlen", $entries)) + 2;
+    $perRow = max(1, intdiv($width, $colWidth));
+    $lines = [];
+    for ($start = 0; $start < count($entries); $start += $perRow) {
+        $chunk = array_map(function ($e) use ($colWidth) {
+            return str_pad($e, $colWidth);
+        }, array_slice($entries, $start, $perRow));
+        $lines[] = implode("", $chunk);
+    }
+    return implode("\n", $lines);
+}
+
 // Prompts for a file path or URL, then runs $action on it (e.g. load_schema
 // or reading a file) -- $action is expected to return null, with its own
 // error message, if the resource can't be found/read. Rather than ending
