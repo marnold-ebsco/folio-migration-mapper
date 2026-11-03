@@ -188,11 +188,35 @@ def apply_answer(row, resolved):
     else:
         row["legacy_field"] = val
 
-def ask_count(full_path):
+# Lists the fields each instance of an array would have, for "?" at the
+# "how many instances" prompt -- so you can see what you're about to map
+# before committing to a count. An array of objects lists its top-level
+# properties (same metadata/_version/readonly exclusions used everywhere
+# else); an array of scalars just names the single value's type, since
+# there's nothing else to list.
+def describe_array_item_fields(items):
+    props = items.get("properties")
+    if not props:
+        item_type = items.get("type", "unknown")
+        return f"Each instance of this array is a single {item_type} value (no sub-fields)."
+    lines = ["Fields in each instance:"]
+    for key, sub in sorted(props.items()):
+        if key in ("metadata", "_version") or is_readonly(sub):
+            continue
+        sub_type = sub.get("type", "object" if sub.get("properties") else "unknown")
+        if isinstance(sub_type, list):
+            sub_type = ",".join(sub_type)
+        lines.append(f"  {key} ({sub_type})")
+    return "\n".join(lines)
+
+def ask_count(full_path, items):
     while True:
-        response = input(f"How many instances of '{full_path}' should be included in the map? [2]: ").strip()
+        response = input(f"How many instances of '{full_path}' should be included in the map? [2] (?=show fields): ").strip()
         if not response:
             return 2
+        if response == "?":
+            print(describe_array_item_fields(items))
+            continue
         try:
             return int(response)
         except ValueError:
@@ -228,7 +252,7 @@ def prompt_leaf(row, is_required):
 # automatically, with no prompting at all.
 def handle_array(sub, full_path, is_required, force_silent):
     items = sub.get("items", {})
-    count = 0 if force_silent else ask_count(full_path)
+    count = 0 if force_silent else ask_count(full_path, items)
     effective_count = count if count > 0 else 1
     child_silent = force_silent or count == 0
 
