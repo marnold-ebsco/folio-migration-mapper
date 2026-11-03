@@ -442,3 +442,14 @@ if object_keys:
     print("The following keys are objects with no defined structure in the schema (e.g. custom fields, or unresolved $ref) and were excluded from the output: " + ", ".join(object_keys))
     print()
 print(f"Wrote key list to {key_list_path}")
+
+# REQUIRED (unconditional) fields left "Not mapped" are worth flagging --
+# unlike "REQUIRED if used" fields inside an array instance, which are
+# routinely left unmapped whenever that instance goes unused (by design,
+# not a gap), an unconditional REQUIRED field being unmapped is always
+# worth a second look. This is informational only -- nothing earlier in
+# the script stops you from leaving a required field unmapped.
+unmapped_required = [f for f in required_fields if "[" not in f and is_unmapped_row(rows_by_field[f])]
+if unmapped_required:
+    print()
+    print("Warning: these REQUIRED fields were left \"Not mapped\": " + ", ".join(unmapped_required))
