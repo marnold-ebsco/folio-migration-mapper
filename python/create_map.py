@@ -6,6 +6,9 @@ from lib.folio_schema_lib import (
     prompt_required,
     prompt_with_default,
     prompt_for_schema_resource,
+    prompt_for_data_file,
+    build_display_names,
+    format_field_grid,
     RefResolver,
     load_schema,
     build_key_lines,
@@ -57,6 +60,20 @@ if empty_map and (compact or not mark_mapped):
     print("Note: --map-template-only ignores --compact and --no-text-annotation.", file=sys.stderr)
     compact = False
     mark_mapped = True
+
+# Asked first, before anything else: a TSV data file to pick legacy fields
+# from instead of typing them. Blank skips it entirely -- everything below
+# behaves exactly as it did before this feature existed.
+data_file_result = prompt_for_data_file()
+if data_file_result:
+    data_file_path, data_columns = data_file_result
+    data_display_names = build_display_names(data_columns)
+    data_usage_counts = [0] * len(data_columns)
+    data_usage_fields = [[] for _ in data_columns]
+else:
+    data_file_path, data_columns = None, []
+    data_display_names, data_usage_counts, data_usage_fields = [], [], []
+grid_shown = False
 
 input_path, (schema, output_dir, output_stem, repo) = prompt_for_schema_resource(load_schema)
 
@@ -248,6 +265,25 @@ def describe_current_answer(row):
 # since that would be noisy across a schema with 100+ fields.
 correction_hint_shown = False
 
+def record_usage(folio_field, resolved):
+    if resolved in data_columns:
+        idx = data_columns.index(resolved)
+        data_usage_counts[idx] += 1
+        data_usage_fields[idx].append(folio_field)
+
+# Reverses record_usage -- needed when a "#N" correction overwrites a row
+# that had previously consumed a data column, so that column's usage
+# count/log entry doesn't double-count the old answer alongside the new
+# one. A no-op for a fresh row (whose previous value is always "Not
+# mapped", never a data column) or a correction that didn't involve a
+# column either time.
+def unrecord_usage(folio_field, previous_value):
+    if previous_value in data_columns:
+        idx = data_columns.index(previous_value)
+        if folio_field in data_usage_fields[idx]:
+            data_usage_fields[idx].remove(folio_field)
+            data_usage_counts[idx] -= 1
+
 # The actual input loop for one leaf prompt, shared by a fresh prompt and
 # a "#N" correction re-ask of an already-answered one. On a fresh prompt,
 # blank means "Not mapped" (unchanged default). On a correction, blank
@@ -259,15 +295,25 @@ correction_hint_shown = False
 # (nested "#N" within a correction just recurses one level deeper, which
 # is fine for interactive use).
 def ask_leaf(number, row, is_required, is_correction=False):
-    global correction_hint_shown
+    global grid_shown, correction_hint_shown
     folio_field = row["folio_field"]
     note = required_note(folio_field, is_required)
+    if data_columns and not grid_shown:
+        print(format_field_grid(data_columns, data_display_names, data_usage_counts))
+        print("(* = already used; fields can be reused. Enter a number, \"text\"/'text', true/false, a field name, or ? to relist.)")
+        grid_shown = True
     if not correction_hint_shown:
         print("(Tip: type #N at any prompt to jump back and correct prompt number N's answer.)")
         correction_hint_shown = True
+    hint = " (number/\"text\"/true/false/?/#N): " if data_columns else " (#N to correct an earlier answer): "
+
     while True:
         default_desc = f"[current: {describe_current_answer(row)}, blank keeps it]" if is_correction else "[Not mapped]"
-        answer = input(f"Enter legacy field for '{folio_field}' (#{number}){note} {default_desc}: ").strip()
+        answer = input(f"Enter legacy field for '{folio_field}' (#{number}){note} {default_desc}{hint}").strip()
+
+        if data_columns and answer.lower() in ("?", "list"):
+            print(format_field_grid(data_columns, data_display_names, data_usage_counts))
+            continue
 
         if answer.startswith("#") and answer[1:].isdigit():
             target_n = int(answer[1:])
@@ -283,10 +329,22 @@ def ask_leaf(number, row, is_required, is_correction=False):
 
         if not answer:
             if not is_correction:
+                unrecord_usage(folio_field, row["legacy_field"])
                 apply_answer(row, "Not mapped")
             return
 
-        apply_answer(row, answer)
+        resolved = answer
+        if data_columns and resolved.isdigit():
+            idx = int(resolved)
+            if 1 <= idx <= len(data_columns):
+                resolved = data_columns[idx - 1]
+            else:
+                print(f"Note: {idx} is out of range (1-{len(data_columns)}); treating it as a literal field name instead.", file=sys.stderr)
+
+        unrecord_usage(folio_field, row["legacy_field"])
+        apply_answer(row, resolved)
+        if not is_unmapped_row(row):
+            record_usage(folio_field, resolved)
         return
 
 # Prompts for a single leaf row. Every row -- including every instance of
@@ -497,6 +555,22 @@ if object_keys:
     print("The following keys are objects with no defined structure in the schema (e.g. custom fields, or unresolved $ref) and were excluded from the output: " + ", ".join(object_keys))
     print()
 print(f"Wrote key list to {key_list_path}")
+
+if data_columns:
+    log_path = os.path.join(mapping_dir, output_stem + "_field_usage.log")
+    used = [(data_display_names[i], data_usage_fields[i]) for i in range(len(data_columns)) if data_usage_fields[i]]
+    unused = [data_display_names[i] for i in range(len(data_columns)) if not data_usage_fields[i]]
+    with open(log_path, "w") as f:
+        f.write(f"Data file: {data_file_path}\n\n")
+        f.write("USED COLUMNS:\n")
+        for name, fields in used:
+            f.write(f"  {name} -> {', '.join(fields)}\n")
+        if not used:
+            f.write("  (none)\n")
+        f.write("\nUNUSED COLUMNS:\n")
+        f.write(("  " + ", ".join(unused) + "\n") if unused else "  (none)\n")
+    print()
+    print(f"Wrote field usage log to {log_path}")
 
 # REQUIRED (unconditional) fields left "Not mapped" are worth flagging --
 # unlike "REQUIRED if used" fields inside an array instance, which are

@@ -3,6 +3,7 @@ import json
 import os
 import posixpath
 import re
+import shutil
 import sys
 import urllib.error
 import urllib.request
@@ -50,6 +51,71 @@ def prompt_with_default(prompt_text, default):
     except EOFError:
         value = ""
     return value if value else default
+
+
+# Reads just the first line of a TSV file and splits it into column names,
+# for the legacy-field picker. Blank input skips the picker entirely (the
+# caller falls back to plain free-text prompting). A bad path re-prompts up
+# to max_attempts times, same retry contract as prompt_for_resource, before
+# giving up and continuing without a data file.
+def prompt_for_data_file(max_attempts=3):
+    for attempt in range(1, max_attempts + 1):
+        path = prompt_with_default(
+            "Enter path to a TSV data file to pick legacy fields from (blank to skip): ", ""
+        )
+        if not path:
+            return None
+        try:
+            with open(path, newline="") as f:
+                header = f.readline()
+        except OSError as e:
+            header = None
+            print(f"Error: couldn't read '{path}': {e}", file=sys.stderr)
+        if header is not None and not header.strip():
+            header = None
+            print(f"Error: '{path}' is empty.", file=sys.stderr)
+        if header is not None:
+            columns = [c.strip() for c in header.rstrip("\r\n").split("\t")]
+            return path, columns
+        remaining = max_attempts - attempt
+        if remaining > 0:
+            print(f"Please try again ({remaining} attempt{'s' if remaining != 1 else ''} left).", file=sys.stderr)
+        else:
+            print("Too many failed attempts. Continuing without a data file.", file=sys.stderr)
+    return None
+
+
+# Disambiguates a TSV header that repeats a column name (malformed, but it
+# happens) by suffixing later repeats with "#2", "#3", etc. -- for display
+# only. The underlying column name used for matching/output stays the plain
+# one for every occurrence; this just keeps the picker's grid legible.
+def build_display_names(columns):
+    seen = {}
+    display = []
+    for c in columns:
+        seen[c] = seen.get(c, 0) + 1
+        display.append(c if seen[c] == 1 else f"{c}#{seen[c]}")
+    return display
+
+
+# Renders the numbered field-picker grid, wrapped to the terminal width (80
+# columns if that can't be determined, e.g. when output isn't a tty). A "*"
+# right after a column's number marks it as already used at least once;
+# fields stay in the grid and keep being selectable after that, since reuse
+# is allowed.
+def format_field_grid(columns, display_names, usage_counts, width=None):
+    if width is None:
+        width = shutil.get_terminal_size(fallback=(80, 24)).columns
+    entries = []
+    for i, label in enumerate(display_names, 1):
+        marker = "*" if usage_counts[i - 1] else " "
+        entries.append(f"{i:>2}{marker}{label}")
+    col_width = max(len(e) for e in entries) + 2
+    per_row = max(1, width // col_width)
+    lines = []
+    for start in range(0, len(entries), per_row):
+        lines.append("".join(e.ljust(col_width) for e in entries[start:start + per_row]))
+    return "\n".join(lines)
 
 
 # Prompts for a file path or URL, then runs `action` on it (e.g. load_schema
