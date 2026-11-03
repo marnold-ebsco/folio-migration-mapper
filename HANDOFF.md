@@ -21,9 +21,183 @@ URLs — see README's "views" section). Shared logic lives in
 `folio_schema_lib.py` / `folio_schema_lib.php` plus a hand-rolled
 dependency-free YAML parser (`yaml_lite.py` / `.php`) for OpenAPI schemas.
 
-Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
-(no other branches currently exist). Working tree is clean as of this
-handoff, HEAD at `6ac72f9` (pushed).
+Repo: `github.com:marnold-ebsco/folio-migration-mapper`. **As of this
+handoff (2026-11-03/04 session) there are three relevant branches, all
+pushed to origin, all working trees clean:**
+
+- **`main`** — HEAD `d2c357b`. Has every fix/feature below *except* the
+  TSV legacy-field picker itself, in both Python and PHP (ported pairwise
+  this session — Python first on its own small branches, merged to `main`,
+  then PHP ported from the verified Python and merged to `main` too).
+- **`legacy-field-picker`** — HEAD `6a44fbe` (Python TSV picker, rebased
+  onto `main` as of the commit before `d2c357b`/the `.gitignore` fix —
+  i.e. it does **not** yet have that `.gitignore` fix; harmless, just
+  don't be surprised by `working/`/`.venv/` showing as untracked there).
+  **Not yet merged to `main` for real** (deliberately — see "Next steps").
+- **`legacy-field-picker-php`** — HEAD `5a414c4`. PHP port of the picker,
+  branched from `main` *after* all the PHP main-fixes above were merged
+  in, and does have the `.gitignore` fix. Also not yet merged to `main`.
+- This working copy is currently checked out on **`legacy-field-picker-php`**.
+
+(If those HEAD hashes look stale when you read this, trust `git log
+--oneline -1 <branch>` over this file — this is a point-in-time note, not
+a live pointer.)
+
+## Everything built this session (2026-11-03/04)
+
+User's own words, roughly: a TSV-column picker for `create_map`'s
+legacy-field prompts, plus several smaller usability fixes that came up
+while testing it. Session started Python-only; user's normal workflow is
+PHP, so everything was ported to PHP once the Python side was verified
+(porting from a verified reference is cheaper than designing both at
+once — see cost-estimate discussion earlier in this same conversation if
+resuming it; not otherwise recorded here).
+
+**Branching pattern used throughout**: any fix/feature that didn't
+inherently depend on the TSV picker's state went on its own small branch
+off `main`, got tested, merged to `main` (`--no-ff`), and pushed — in
+*both* languages, Python first each time. Only once `main` had it did the
+picker branch (`legacy-field-picker`, then later `legacy-field-picker-php`)
+rebase on top and layer on the picker-specific piece. This kept the
+picker branches from re-deriving fixes that belonged everywhere, and kept
+each `main` commit auditable/bisectable on its own. Expect this same
+pattern if there's more follow-up work before the picker branches
+eventually merge to `main` for real.
+
+### On `main` (both languages)
+
+- **Schema-wide (not just per-nesting-level) scalar/array prompt
+  ordering.** Every array field anywhere in the schema — even nested
+  inside a plain object — now waits for the *entire* schema's scalar
+  fields to be prompted first, then all arrays are prompted together
+  after one `--- Switching to array fields ---` banner. Python:
+  `build_and_prompt_object()`'s `defer_arrays` param (default `True` for
+  the top-level walk; `False` when called from inside an array instance,
+  which is already past the global split) + module-level `deferred_arrays`
+  list, drained after the top-level walk returns. PHP: same shape,
+  `$deferArrays` param + `$deferred_arrays`. The `.txt` key list stays
+  alphabetical regardless (built from its own schema walk, independent of
+  prompt order) — the JSON mapping's row order was already prompt-order
+  rather than alphabetical before this change, and still is, in both
+  languages.
+- **`ask_count()`** (the "How many instances of 'X'..." prompt) no longer
+  crashes on non-numeric input (e.g. `?` typed out of habit) — it
+  re-prompts with an error instead.
+- **`?` at that same prompt** previews the fields each instance would
+  have before you commit to a count: an object array lists its sorted
+  top-level property names + types; a scalar array gets a one-line note.
+  Python: `describe_array_item_fields()`. PHP: same name/shape.
+- **End-of-run warning** for unconditionally-`REQUIRED` fields left
+  `"Not mapped"` — printed after "Wrote key list to...". Deliberately
+  excludes `"REQUIRED if used"` fields inside array instances, since those
+  are routinely/intentionally left unmapped whenever that instance goes
+  unused (not a gap). Uses the `required_fields`/`$required_fields` list
+  that was already being collected in both languages but never used for
+  anything until now.
+- **`#N` correction command.** Type `#N` at *any* leaf prompt to jump
+  back and re-answer prompt number N, then resume wherever you were.
+  Blank during a correction means **"keep the current value"** — not
+  "reset to Not mapped", which is still what blank means on a *fresh*
+  prompt. Backed by a number→`(row, is_required)` registry (Python:
+  `prompt_registry`, stores the row dict directly since Python dicts are
+  references; PHP: `$prompt_registry`, stores the row's *index* into
+  `$rows` instead, since a plain PHP array value wouldn't alias back —
+  this is the one place the two languages' implementations differ in
+  shape, not behavior) and a reusable input-loop function split out of
+  `prompt_leaf` (Python: `ask_leaf()`; PHP: same name). Scoped to leaf
+  prompts only — array-count prompts aren't numbered and aren't
+  retroactively editable (would mean adding/removing rows after the
+  fact). **Known limitation, not fixed**: correcting a `"REQUIRED if
+  used"` field after its array instance's silent-skip decision was
+  already made does *not* retroactively re-prompt that instance's sibling
+  fields — you'd need to `#N` those individually too. User was told this
+  up front when the feature was proposed.
+
+### Only on the picker branches (`legacy-field-picker` / `-php`)
+
+Depends on picker-only state (`data_columns`/`$dataColumns`,
+`data_usage_counts`/`$dataUsageCounts`, etc.) that doesn't exist on
+`main`:
+
+- **First prompt** (before the schema menu) asks for an optional TSV data
+  file; blank skips it and everything behaves exactly as it did before
+  this feature existed. Can also be given directly via `--data-file PATH`
+  to skip that prompt entirely — a bad/missing value exits immediately,
+  no retry (it's a fixed CLI argument, not something to retype). Python:
+  `load_data_file_columns()` + `prompt_for_data_file()` in
+  `folio_schema_lib.py`, shared between the interactive prompt and the
+  flag. PHP: same names in `folio_schema_lib.php`, using
+  `RuntimeException`/`InvalidArgumentException` where Python uses
+  `OSError`/`ValueError`.
+- **At each leaf prompt**, the file's header columns can be picked by
+  number instead of typed, with a `*` marker for already-used columns
+  (reuse is allowed, not removed from the pool), and `?`/`list` to
+  redisplay the grid. Python: `format_field_grid()` (width via
+  `shutil.get_terminal_size`). PHP: same name/shape, but PHP has no
+  `shutil` equivalent, so there's a new `get_terminal_width()` helper
+  (`COLUMNS` env var → `tput cols` → flat 80 fallback). An out-of-range
+  number re-prompts with a note rather than becoming a bogus literal
+  field name.
+- **At the array-count prompt**, `?` *also* shows the TSV columns (not
+  just the schema's field names) — the point is deciding, before sizing
+  an array, whether the file has anything worth mapping into it at all
+  (e.g. no URL-like column → don't bother mapping `electronicAccess`).
+- **End-of-run `<stem>_field_usage.log`** lists which columns were used
+  (and where) vs. unused.
+- **The `#N` correction command correctly re-/un-attributes TSV column
+  usage** when a correction changes which column (or none) a row maps to
+  — Python: `unrecord_usage()`; PHP: same name. Without this, correcting
+  a picked-column answer would double-count the old column in the usage
+  log. Verified in both languages: correcting a row from one column to
+  another releases the old column back to "unused" and attributes the
+  new one, nothing double-counted.
+
+### Verification performed (both languages, this session)
+
+Not a formal test suite — ad hoc scripted interactive runs (piping a
+sequence of canned answers into `create_map.py`/`.php` via stdin),
+mirrored line-for-line between Python and PHP once Python's behavior was
+confirmed correct, including:
+
+- A synthetic nested test schema (`aLeaf`, `mNested.{nestedLeaf,
+  nestedArray}`, `topArray`, `zLeaf`) to prove the schema-wide scalar/array
+  ordering: scalars prompted first (including the one nested inside
+  `mNested`), *then* one banner, *then* both arrays — in both languages.
+- `ask_count()` rejecting `?`/non-numeric input without crashing, in both
+  languages, against that same schema.
+- The real Holdings schema (`mod-inventory-storage`,
+  `holdings-storage.html#holdings_storage_holdings_post`) for `?`'s field
+  preview against `electronicAccess`'s real fields
+  (`linkText`/`materialsSpecification`/`publicNote`/`relationshipId`/`uri`) —
+  Python only; not re-verified against the real schema in PHP this
+  session (synthetic-schema coverage was treated as sufficient parity
+  evidence given identical code shape — flag this if it matters before
+  relying on it further).
+- The real TSV fixture (`working/CUMARCExport110226_repaired_prepped.tsv`,
+  17 columns) for the picker: relist, pick-by-number, typed-name pick,
+  reuse marker, literal value, out-of-range digit re-prompt, `--data-file`
+  flag (happy path + bad path + missing value), and a `#N` correction
+  that moves a column's attribution — in both languages, same scripted
+  inputs mirrored.
+- The end-of-run REQUIRED-fields warning, with and without a field
+  correction moving a required field in/out of "Not mapped" — in both
+  languages.
+
+**Important caveat on all of the above**: this was piped-stdin scripted
+verification (`printf '...' | python3 create_map.py`), not the user
+interactively testing in a real terminal. The user ("testing now") was in
+the middle of their own manual interactive testing of the Python picker
+branch when this PHP port started — their findings, if any, aren't
+reflected here. Check with them before assuming the Python branch is
+fully signed off.
+
+### Working directory housekeeping
+
+`.gitignore` now ignores `/working/` (holds the user's real TSV test
+file, `CUMARCExport110226_repaired_prepped.tsv` — 5.4MB, not meant to be
+committed) and `.venv/` (created this session since none existed; has
+`pytest` + `flake8` installed, no `requirements.txt` in this repo). Both
+additions are on `main` and both picker branches.
 
 ## Scalars-then-arrays prompt ordering (2026-10-23)
 
@@ -133,12 +307,16 @@ trailing `-c`/`bash -lc` wrapper, or a WSL-side terminal tab) and run
 `#` in it. The one-shot `wsl.exe -d Ubuntu-24.04 bash -lc '<cmd>'` pattern
 is fine for commands with no `#`.
 
-## Current state (as of 2026-10-23)
+## Current state (as of 2026-10-23; see top of file for 2026-11-03/04 session)
 
-Everything below has been committed and pushed to `main`. No open branches,
-no pending work, no known bugs.
+Everything below was true as of 2026-10-23 — committed and pushed to
+`main`, no open branches, no pending work, no known bugs. It is **no
+longer the full picture**: see the top of this file for the three-branch
+state as of 2026-11-03/04. `main`'s commit history now continues well
+past `6ac72f9` — run `git log --oneline main` for the current list rather
+than trusting this section's list below as complete.
 
-Recent commit history (newest first):
+Recent commit history as of 2026-10-23 (newest first, now historical):
 
 - `6ac72f9` — Prompt scalars before arrays, with a visible switch-over
 - `d61867a` — Stop guessing legacy field names for array instances
@@ -227,9 +405,34 @@ readonly-exclusion audit above). Set `GITHUB_TOKEN` before heavy testing,
 or just wait out the hourly reset (`curl -s https://api.github.com/rate_limit`
 to check).
 
-## Next steps
+## Next steps (as of 2026-11-04 — supersedes the paragraph above)
 
-None currently queued. No open bugs, no in-progress feature. If resuming
-cold, re-run a quick paired Python/PHP smoke test (View 1 + View 4,
-`--map-template-only`) before making changes, to confirm the baseline is
-still green.
+1. **Check in with the user about their own manual testing of
+   `legacy-field-picker` (Python)** before touching that branch further —
+   they said "testing now" partway through this session and may have
+   found issues not reflected here. This session's own verification was
+   scripted/piped, not interactive.
+2. **Decide whether the real-Holdings-schema `?`-preview check needs
+   re-running against PHP** (it was only done against Python this
+   session; PHP parity was inferred from identical code shape against a
+   synthetic schema, not independently re-verified against the real
+   schema).
+3. **Merge both picker branches into `main` for real** once (1) and (2)
+   are resolved and the user is satisfied — right now they're rebased
+   onto `main`, not merged, by design (kept separate so the picker
+   feature itself stays easy to back out if needed).
+4. Once merged, this file's picker section above should probably get
+   folded into the main numbered feature list the way `main`'s other
+   features are (right now it's written as a session narrative, not a
+   permanent feature description — fine for now, but it'll read oddly
+   once the picker is just "a normal part of the tool").
+5. Consider whether `README.md` needs updating to document `--data-file`
+   and the TSV picker (README currently only documents pre-this-session
+   behavior) — not done yet, deliberately deferred until the branches are
+   closer to merging.
+
+If resuming cold on something **unrelated** to all of the above instead,
+re-run a quick paired Python/PHP smoke test (View 1 + View 4,
+`--map-template-only`) on `main` before making changes, to confirm the
+pre-session baseline is still green — note this won't cover anything from
+2026-11-03/04, which needs the verification steps above instead.
