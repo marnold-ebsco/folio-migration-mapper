@@ -22,6 +22,26 @@ with schema loading, `$ref` resolution, and key-list building.
   resolution can involve several GitHub API calls per run, so the
   unauthenticated limit is easy to hit during heavy testing.
 
+## Installation / Updating
+
+Clone the repo once:
+
+```bash
+git clone git@github.com:marnold-ebsco/folio-migration-mapper.git
+cd folio-migration-mapper
+```
+
+To pick up the latest changes later, from inside the repo:
+
+```bash
+git pull
+```
+
+No build step or package install is required — both tools are dependency-
+free (Python's standard library only; PHP's built-in `json` extension
+only). If you're setting the repo up on a remote host instead of cloning
+directly there, see "Getting the files onto an EC2 instance" below.
+
 ## create_map
 
 Interactively builds a mapping JSON file (and a plain key-list `.txt` file)
@@ -121,6 +141,40 @@ counts as readonly if the schema marks it `readonly`/`readOnly`, or if its
 description says so in prose (e.g. item-storage's `itemIdentifier`, which
 has no `readonly` attribute but says "(read only)" in its description).
 
+### Legacy-field picker (TSV data file)
+
+**Python only** (`python/create_map.py`; not yet ported to the PHP tool).
+
+Before the schema menu, you're asked for an optional TSV data file to pick
+legacy field names from instead of typing them — blank skips this entirely
+and everything behaves exactly as described above. It can also be given
+directly as `--data-file PATH` to skip that prompt; a bad or missing path
+there exits immediately with no retry, since it's a fixed command-line
+value rather than something to retype.
+
+Once a data file is loaded, each field prompt shows a numbered grid of the
+file's header columns (a `*` marks a column already used at least once —
+reuse is allowed, columns aren't removed from the pool). At that prompt
+you can enter:
+
+- A column number, to map that field to the matching column
+- A legacy field name, quoted literal, or `true`/`false`, exactly as
+  without a data file
+- `?` or `list` to redisplay the grid
+
+An out-of-range number re-prompts with a note instead of becoming a
+literal field name. At the "how many instances..." array-count prompt,
+`?` also shows this same column grid, alongside the schema's own field
+preview — useful for deciding whether an array is even worth sizing when
+the file has nothing to map into it (e.g. no URL-like column for
+`electronicAccess`). The `#N` correction command (see above) correctly
+moves a column's usage tracking if the correction changes which column
+(or none) a row maps to.
+
+At the end of a run that used a data file, `{stem}_field_usage.log` is
+also written alongside the mapping files, listing which columns were used
+(and for which fields) versus left unused.
+
 ### create_map options
 
 | Option | Effect |
@@ -128,6 +182,7 @@ has no `readonly` attribute but says "(read only)" in its description).
 | `--no-text-annotation` | Don't annotate the `.txt` key list with each field's active mapping. Annotations (`fieldname  [legacy_field]`, `fieldname  ["value"]`, `fieldname  [<true>]`) are shown by default. |
 | `--compact` | Remove fields with no active mapping from both the `.txt` key list and the JSON map. Off by default (all fields are included in both). |
 | `--map-template-only` | A separate mode: skips all interactive prompting and writes one full map with every field present and `legacy_field` left as `"Not mapped"`. Ignores `--compact`/`--no-text-annotation` (with a notice), since a map with nothing mapped has nothing to compact or annotate. Instead, the `.txt` key list annotates each field with its schema shape: `fieldname  type: <type>`, plus `enum: opt1,opt2` if the field is an enum and `pattern: <pattern>` (or `pattern: UUID` for the standard UUID patterns) if it has one. |
+| `--data-file PATH` | Python only. Skip the "Enter path to a TSV data file..." prompt and use `PATH` directly as the legacy-field picker's column source. A bad/empty path exits immediately (no retry prompts, since this is a fixed command-line value, not something to retype). |
 | `--help`, `-h` | Show usage and exit. |
 
 Output goes to the folder you chose (`mapping` by default) alongside the
