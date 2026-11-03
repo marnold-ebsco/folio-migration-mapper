@@ -26,6 +26,11 @@ Options:
                           nothing mapped has nothing to compact or
                           annotate -- those two switches are ignored (with
                           a notice) if given alongside this one.
+  --data-file PATH        Skip the "Enter path to a TSV data file..."
+                          prompt and use PATH directly as the legacy-field
+                          picker's column source. A bad/empty path exits
+                          immediately (no retry prompts, since this is a
+                          fixed command-line value, not something to retype).
   --help, -h              Show this help message and exit.
 
 EOT;
@@ -39,6 +44,16 @@ $markMapped = !in_array("--no-text-annotation", array_slice($argv, 1));
 $emptyMap = in_array("--map-template-only", array_slice($argv, 1));
 $compact = in_array("--compact", array_slice($argv, 1));
 
+$dataFileArg = null;
+$dataFileFlagIdx = array_search("--data-file", $argv);
+if ($dataFileFlagIdx !== false) {
+    if ($dataFileFlagIdx + 1 >= count($argv)) {
+        fwrite(STDERR, "Error: --data-file requires a value.\n");
+        exit(1);
+    }
+    $dataFileArg = $argv[$dataFileFlagIdx + 1];
+}
+
 // --map-template-only is its own mode: nothing is ever mapped, so there's
 // nothing for --compact to remove or --no-text-annotation to suppress. Both
 // are ignored (rather than silently accepted as no-op combinations) so the
@@ -48,6 +63,38 @@ if ($emptyMap && ($compact || !$markMapped)) {
     $compact = false;
     $markMapped = true;
 }
+
+// Asked first, before anything else: a TSV data file to pick legacy fields
+// from instead of typing them. Blank (or --data-file omitted) skips it
+// entirely -- everything below behaves exactly as it did before this
+// feature existed.
+if ($dataFileArg !== null) {
+    try {
+        $dataFileResult = [$dataFileArg, load_data_file_columns($dataFileArg)];
+    } catch (RuntimeException $e) {
+        fwrite(STDERR, "Error: couldn't read '$dataFileArg': " . $e->getMessage() . "\n");
+        exit(1);
+    } catch (InvalidArgumentException $e) {
+        fwrite(STDERR, "Error: " . $e->getMessage() . "\n");
+        exit(1);
+    }
+} else {
+    $dataFileResult = prompt_for_data_file();
+}
+
+if ($dataFileResult !== null) {
+    [$dataFilePath, $dataColumns] = $dataFileResult;
+    $dataDisplayNames = build_display_names($dataColumns);
+    $dataUsageCounts = array_fill(0, count($dataColumns), 0);
+    $dataUsageFields = array_fill(0, count($dataColumns), []);
+} else {
+    $dataFilePath = null;
+    $dataColumns = [];
+    $dataDisplayNames = [];
+    $dataUsageCounts = [];
+    $dataUsageFields = [];
+}
+$gridShown = false;
 
 $rows = [];
 $object_keys = [];
@@ -212,6 +259,7 @@ function describe_array_item_fields($items) {
 }
 
 function ask_count($fullPath, $items) {
+    global $dataColumns, $dataDisplayNames, $dataUsageCounts;
     while (true) {
         echo "How many instances of '$fullPath' should be included in the map? [2] (?=show fields): ";
         $response = trim(fgets(STDIN));
@@ -220,6 +268,15 @@ function ask_count($fullPath, $items) {
         }
         if ($response === "?") {
             echo describe_array_item_fields($items) . "\n";
+            if (!empty($dataColumns)) {
+                // Also show what's actually in the data file -- knowing the
+                // schema's field names isn't enough to decide whether this
+                // array is worth mapping at all (e.g. no point in sizing
+                // electronicAccess if there's no URL-like column to map its
+                // 'uri' field from).
+                echo "\n";
+                echo format_field_grid($dataColumns, $dataDisplayNames, $dataUsageCounts) . "\n";
+            }
             continue;
         }
         if (ctype_digit($response)) {
@@ -261,6 +318,34 @@ function describe_current_answer($row) {
 // since that would be noisy across a schema with 100+ fields.
 $correction_hint_shown = false;
 
+function record_usage($folioField, $resolved) {
+    global $dataColumns, $dataUsageCounts, $dataUsageFields;
+    $idx = array_search($resolved, $dataColumns);
+    if ($idx !== false) {
+        $dataUsageCounts[$idx]++;
+        $dataUsageFields[$idx][] = $folioField;
+    }
+}
+
+// Reverses record_usage() -- needed when a "#N" correction overwrites a
+// row that had previously consumed a data column, so that column's usage
+// count/log entry doesn't double-count the old answer alongside the new
+// one. A no-op for a fresh row (whose previous value is always "Not
+// mapped", never a data column) or a correction that didn't involve a
+// column either time.
+function unrecord_usage($folioField, $previousValue) {
+    global $dataColumns, $dataUsageCounts, $dataUsageFields;
+    $idx = array_search($previousValue, $dataColumns);
+    if ($idx !== false) {
+        $pos = array_search($folioField, $dataUsageFields[$idx]);
+        if ($pos !== false) {
+            unset($dataUsageFields[$idx][$pos]);
+            $dataUsageFields[$idx] = array_values($dataUsageFields[$idx]);
+            $dataUsageCounts[$idx]--;
+        }
+    }
+}
+
 // The actual input loop for one leaf prompt, shared by a fresh prompt and
 // a "#N" correction re-ask of an already-answered one. On a fresh prompt,
 // blank means "Not mapped" (unchanged default). On a correction, blank
@@ -270,21 +355,37 @@ $correction_hint_shown = false;
 // "#N" is checked first, ahead of the normal answer handling, so it works
 // the same whether you're answering for the first time or mid-correction
 // (nested "#N" within a correction just recurses one level deeper, which
-// is fine for interactive use).
+// is fine for interactive use). When a data file is loaded, a bare number
+// is always resolved as a picker index, not as literal text -- an
+// out-of-range number (e.g. "0", or past the end of the list) is a
+// mistake, not a hardcoded field name, so it re-prompts with a note
+// rather than silently becoming legacy_field "0".
 function ask_leaf($number, &$row, $isRequired, $isCorrection = false) {
-    global $correction_hint_shown, $prompt_registry, $rows;
+    global $correction_hint_shown, $prompt_registry, $rows, $gridShown, $dataColumns, $dataDisplayNames, $dataUsageCounts;
     $folioField = $row["folio_field"];
     $note = required_note($folioField, $isRequired);
+    if (!empty($dataColumns) && !$gridShown) {
+        echo format_field_grid($dataColumns, $dataDisplayNames, $dataUsageCounts) . "\n";
+        echo "(* = already used; fields can be reused. Enter a number, \"text\"/'text', true/false, a field name, or ? to relist.)\n";
+        $gridShown = true;
+    }
     if (!$correction_hint_shown) {
         echo "(Tip: type #N at any prompt to jump back and correct prompt number N's answer.)\n";
         $correction_hint_shown = true;
     }
+    $hint = !empty($dataColumns) ? " (number/\"text\"/true/false/?/#N): " : " (#N to correct an earlier answer): ";
+
     while (true) {
         $defaultDesc = $isCorrection
             ? "[current: " . describe_current_answer($row) . ", blank keeps it]"
             : "[Not mapped]";
-        echo "Enter legacy field for '$folioField' (#$number)$note $defaultDesc: ";
+        echo "Enter legacy field for '$folioField' (#$number)$note $defaultDesc$hint";
         $answer = trim(fgets(STDIN));
+
+        if (!empty($dataColumns) && in_array(strtolower($answer), ["?", "list"])) {
+            echo format_field_grid($dataColumns, $dataDisplayNames, $dataUsageCounts) . "\n";
+            continue;
+        }
 
         if (strlen($answer) > 1 && $answer[0] === "#" && ctype_digit(substr($answer, 1))) {
             $targetN = (int)substr($answer, 1);
@@ -300,14 +401,32 @@ function ask_leaf($number, &$row, $isRequired, $isCorrection = false) {
             continue;
         }
 
+        if (!empty($dataColumns) && ctype_digit($answer)) {
+            $idx = (int)$answer;
+            if ($idx < 1 || $idx > count($dataColumns)) {
+                fwrite(
+                    STDERR,
+                    "Note: $idx is out of range (1-" . count($dataColumns) . "); enter a number from the list, " .
+                    "a field name, a quoted literal, true/false, or press enter to keep/clear it.\n"
+                );
+                continue;
+            }
+            $answer = $dataColumns[$idx - 1];
+        }
+
         if ($answer === "") {
             if (!$isCorrection) {
+                unrecord_usage($folioField, $row["legacy_field"]);
                 apply_answer($row, "Not mapped");
             }
             return;
         }
 
+        unrecord_usage($folioField, $row["legacy_field"]);
         apply_answer($row, $answer);
+        if (!is_unmapped_row($row)) {
+            record_usage($folioField, $answer);
+        }
         return;
     }
 }
@@ -625,6 +744,33 @@ if (!empty($object_keys)) {
     echo "\n";
 }
 echo "Wrote key list to $keyListPath\n";
+
+if (!empty($dataColumns)) {
+    $logPath = "$mappingDir/{$outputStem}_field_usage.log";
+    $used = [];
+    $unused = [];
+    foreach ($dataColumns as $i => $col) {
+        if (!empty($dataUsageFields[$i])) {
+            $used[] = [$dataDisplayNames[$i], $dataUsageFields[$i]];
+        } else {
+            $unused[] = $dataDisplayNames[$i];
+        }
+    }
+    $log = "Data file: $dataFilePath\n\n";
+    $log .= "USED COLUMNS:\n";
+    if (!empty($used)) {
+        foreach ($used as [$name, $fields]) {
+            $log .= "  $name -> " . implode(", ", $fields) . "\n";
+        }
+    } else {
+        $log .= "  (none)\n";
+    }
+    $log .= "\nUNUSED COLUMNS:\n";
+    $log .= !empty($unused) ? "  " . implode(", ", $unused) . "\n" : "  (none)\n";
+    file_put_contents($logPath, $log);
+    echo "\n";
+    echo "Wrote field usage log to $logPath\n";
+}
 
 // REQUIRED (unconditional) fields left "Not mapped" are worth flagging --
 // unlike "REQUIRED if used" fields inside an array instance, which are
