@@ -232,17 +232,72 @@ def next_prompt_number():
     prompted_count += 1
     return prompted_count
 
+# Backs the "#N" correction command: every leaf prompt registers itself
+# here (row, is_required) under its own number the moment it's first
+# asked, so a later prompt can jump back and re-run that exact question.
+prompt_registry = {}
+
+def describe_current_answer(row):
+    if row["legacy_field"] != "Not mapped":
+        return f"legacy field '{row['legacy_field']}'"
+    if row["value"] != "" and row["value"] is not None:
+        return f"literal {json.dumps(row['value'])}"
+    return "Not mapped"
+
+# Shown once, the first time any leaf prompt appears -- not on every one,
+# since that would be noisy across a schema with 100+ fields.
+correction_hint_shown = False
+
+# The actual input loop for one leaf prompt, shared by a fresh prompt and
+# a "#N" correction re-ask of an already-answered one. On a fresh prompt,
+# blank means "Not mapped" (unchanged default). On a correction, blank
+# means "leave it as it is" instead -- jumping back to double-check an
+# answer shouldn't risk silently wiping it if you just hit enter.
+#
+# "#N" is checked first, ahead of the normal answer handling, so it works
+# the same whether you're answering for the first time or mid-correction
+# (nested "#N" within a correction just recurses one level deeper, which
+# is fine for interactive use).
+def ask_leaf(number, row, is_required, is_correction=False):
+    global correction_hint_shown
+    folio_field = row["folio_field"]
+    note = required_note(folio_field, is_required)
+    if not correction_hint_shown:
+        print("(Tip: type #N at any prompt to jump back and correct prompt number N's answer.)")
+        correction_hint_shown = True
+    while True:
+        default_desc = f"[current: {describe_current_answer(row)}, blank keeps it]" if is_correction else "[Not mapped]"
+        answer = input(f"Enter legacy field for '{folio_field}' (#{number}){note} {default_desc}: ").strip()
+
+        if answer.startswith("#") and answer[1:].isdigit():
+            target_n = int(answer[1:])
+            entry = prompt_registry.get(target_n)
+            if not entry:
+                print(f"Error: there's no prompt #{target_n} yet.", file=sys.stderr)
+            else:
+                target_row, target_required = entry
+                print(f"--- Correcting #{target_n} ('{target_row['folio_field']}'); current answer: {describe_current_answer(target_row)} ---")
+                ask_leaf(target_n, target_row, target_required, is_correction=True)
+                print(f"--- Back to #{number} ---")
+            continue
+
+        if not answer:
+            if not is_correction:
+                apply_answer(row, "Not mapped")
+            return
+
+        apply_answer(row, answer)
+        return
+
 # Prompts for a single leaf row. Every row -- including every instance of
 # an array field -- is prompted independently with a plain "Not mapped"
 # default. Nothing is ever guessed or suggested from a prior instance's
 # answer: whatever the user types (or the "Not mapped" default) is used
 # exactly as given, with no suffix appended.
 def prompt_leaf(row, is_required):
-    folio_field = row["folio_field"]
-    note = required_note(folio_field, is_required)
-    progress = f" (#{next_prompt_number()})"
-    answer = input(f"Enter legacy field for '{folio_field}'{progress}{note} [Not mapped]: ").strip()
-    apply_answer(row, answer if answer else "Not mapped")
+    number = next_prompt_number()
+    prompt_registry[number] = (row, is_required)
+    ask_leaf(number, row, is_required)
 
 # Arrays are handled just-in-time: the "how many instances" question for a
 # given array is asked right when that array is reached, immediately before
