@@ -21,9 +21,97 @@ URLs — see README's "views" section). Shared logic lives in
 `folio_schema_lib.py` / `folio_schema_lib.php` plus a hand-rolled
 dependency-free YAML parser (`yaml_lite.py` / `.php`) for OpenAPI schemas.
 
-Repo: `github.com:marnold-ebsco/folio-migration-mapper`, `main` branch only
-(no other branches currently exist). Working tree is clean as of this
-handoff, HEAD at `6ac72f9` (pushed).
+Repo: `github.com:marnold-ebsco/folio-migration-mapper`. As of this handoff
+there are two relevant branches, both pushed and working tree clean:
+
+- `main` — HEAD `012e322`. Several small Python-only fixes/features landed
+  here this session (see "Legacy-field picker + related fixes" below);
+  PHP (`php/create_map.php`) has **not** been touched and does not have any
+  of them yet.
+- `legacy-field-picker` — HEAD `693f814`, rebased on top of current `main`.
+  Adds the TSV data-file legacy-field picker (Python only). This is the
+  currently-checked-out branch in this working copy.
+
+## Legacy-field picker + related fixes (2026-11-03/04) — Python only, PHP not started
+
+Built across several small branches, each merged to `main` first (when the
+fix/feature didn't depend on the picker) before `legacy-field-picker` was
+rebased on top — see git log on `main` for the individual commits/merges.
+All of this is **Python-only** (`python/create_map.py`,
+`python/lib/folio_schema_lib.py`); `php/create_map.php` /
+`php/lib/folio_schema_lib.php` have none of it. Porting to PHP is explicitly
+the next piece of work (see "Next steps").
+
+**On `main`** (so PHP inherits these once ported, and plain free-text mode
+benefits too):
+- Array prompts are now deferred **schema-wide**, not just per nesting
+  level — every array field anywhere in the schema (even nested inside a
+  plain object) waits for the *entire* schema's scalar fields to be
+  prompted first, then all arrays are prompted together after one banner.
+  (`build_and_prompt_object`'s `defer_arrays` param; `deferred_arrays`
+  module-level list.) The `.txt` key list stays alphabetical regardless
+  (unaffected, built from its own schema walk) — the JSON mapping's row
+  order was already prompt-order rather than alphabetical before this
+  change, and still is.
+- `ask_count()` (the "How many instances of 'X'..." prompt) no longer
+  crashes on non-numeric input (e.g. `?` typed out of habit) — re-prompts
+  with an error instead.
+- `?` at that same prompt previews the fields each instance would have
+  (object array: sorted property names + types; scalar array: a one-line
+  note). Helper: `describe_array_item_fields()`.
+- End-of-run warning for unconditionally-`REQUIRED` fields left
+  `"Not mapped"` (excludes `"REQUIRED if used"` fields inside array
+  instances, since those are routinely/intentionally left unmapped
+  whenever that instance goes unused). Uses the previously-collected-but-
+  unused `required_fields` list.
+- **`#N` correction command**: type `#N` at *any* leaf prompt to jump back
+  and re-answer prompt number N, then resume where you were. Blank during
+  a correction means "keep the current value" (not "reset to Not
+  mapped" — that's still blank's meaning on a fresh prompt). Backed by
+  `prompt_registry` (number → `(row, is_required)`), the reusable
+  `ask_leaf()` input loop (split out of `prompt_leaf`), and
+  `describe_current_answer()`. Scoped to leaf prompts only — array-count
+  prompts aren't numbered and aren't retroactively editable (would mean
+  adding/removing rows after the fact). **Known limitation**: correcting a
+  `"REQUIRED if used"` field after its array instance's silent-skip
+  decision was already made does *not* retroactively re-prompt that
+  instance's sibling fields — you'd need to `#N` those individually too.
+
+**Only on `legacy-field-picker`** (depends on the TSV picker's state —
+`data_columns`, `data_usage_counts`, etc. — which doesn't exist on `main`):
+- First prompt (before the schema menu) asks for an optional TSV data
+  file; blank skips it and everything behaves exactly as before. Can also
+  be given directly via `--data-file PATH` to skip that prompt entirely
+  (`load_data_file_columns()`, shared between the prompt and the flag).
+- At each leaf prompt, the file's header columns can be picked by number
+  instead of typed, with a `*` marker for already-used columns (reuse is
+  allowed, not removed from the pool), and `?`/`list` to redisplay the
+  grid (`format_field_grid()`, width-aware via `shutil.get_terminal_size`).
+  An out-of-range number re-prompts with a note rather than becoming a
+  bogus literal field name.
+- At the array-count prompt, `?` also shows the TSV columns (not just the
+  schema's field names) — the point being to decide *before* sizing an
+  array whether the file even has anything worth mapping into it (e.g. no
+  URL-like column → skip `electronicAccess` entirely).
+- End-of-run `<stem>_field_usage.log` lists which columns were used (and
+  where) vs. unused.
+- The `#N` correction command above correctly un-/re-attributes TSV column
+  usage when a correction changes which column (or none) a row maps to
+  (`unrecord_usage()`), so corrected runs don't double-count a column in
+  the usage log.
+
+**To test** (from repo root):
+
+```bash
+git checkout legacy-field-picker
+git pull
+.venv/bin/python python/create_map.py --data-file working/CUMARCExport110226_repaired_prepped.tsv
+```
+
+(or omit `--data-file` to get the interactive prompt, or drop it and the
+flag entirely to test plain free-text mode / `main`'s fixes with no data
+file at all). `.venv` already exists with `pytest`+`flake8` installed; no
+`requirements.txt` in this repo.
 
 ## Scalars-then-arrays prompt ordering (2026-10-23)
 
@@ -133,10 +221,12 @@ trailing `-c`/`bash -lc` wrapper, or a WSL-side terminal tab) and run
 `#` in it. The one-shot `wsl.exe -d Ubuntu-24.04 bash -lc '<cmd>'` pattern
 is fine for commands with no `#`.
 
-## Current state (as of 2026-10-23)
+## Current state (as of 2026-10-23; superseded in part — see 2026-11-03/04 section above)
 
 Everything below has been committed and pushed to `main`. No open branches,
-no pending work, no known bugs.
+no pending work, no known bugs. (This was true as of 2026-10-23; as of
+2026-11-04 there's an additional open branch, `legacy-field-picker`, and
+an explicit next step — see above and "Next steps" below.)
 
 Recent commit history (newest first):
 
@@ -227,9 +317,26 @@ readonly-exclusion audit above). Set `GITHUB_TOKEN` before heavy testing,
 or just wait out the hourly reset (`curl -s https://api.github.com/rate_limit`
 to check).
 
-## Next steps
+## Next steps (as of 2026-11-04)
 
-None currently queued. No open bugs, no in-progress feature. If resuming
-cold, re-run a quick paired Python/PHP smoke test (View 1 + View 4,
-`--map-template-only`) before making changes, to confirm the baseline is
-still green.
+**Port everything in "Legacy-field picker + related fixes" above to PHP**
+(`php/create_map.php`, `php/lib/folio_schema_lib.php`) — this is the
+explicit next piece of work, not yet started. Do it as a straight port
+from the now-verified Python implementation (cheaper than designing both
+at once), ideally mirroring the same commit-by-commit structure (the
+`main`-eligible fixes as their own PHP commits merged to `main`, then the
+picker-specific pieces on a PHP equivalent of `legacy-field-picker`) so
+parity stays easy to audit. Read the Python commits on `main` and on
+`legacy-field-picker` (`git log`) for the design decisions already made —
+don't re-litigate: grid-once-then-`?`-to-relist, `*` marker, blank-keeps-
+on-correction vs blank-means-Not-mapped-on-fresh-prompt, `_field_usage.log`
+naming, `#N` scoped to leaf prompts only, etc.
+
+Once PHP is ported and both are re-confirmed at parity (same paired
+Python/PHP smoke test this file has always recommended), `legacy-field-picker`
+can merge to `main` for real (not just rebase onto it).
+
+If resuming cold on something unrelated instead, re-run a quick paired
+Python/PHP smoke test (View 1 + View 4, `--map-template-only`) before
+making changes, to confirm the pre-picker baseline is still green — note
+this won't cover any of the 2026-11-03/04 work, which is Python-only.
