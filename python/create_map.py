@@ -189,8 +189,14 @@ def apply_answer(row, resolved):
         row["legacy_field"] = val
 
 def ask_count(full_path):
-    response = input(f"How many instances of '{full_path}' should be included in the map? [2]: ").strip()
-    return int(response) if response else 2
+    while True:
+        response = input(f"How many instances of '{full_path}' should be included in the map? [2]: ").strip()
+        if not response:
+            return 2
+        try:
+            return int(response)
+        except ValueError:
+            print(f"Error: '{response}' isn't a whole number. Enter a number, or press enter for 2.", file=sys.stderr)
 
 # Since arrays are now sized just-in-time, the eventual total row count
 # isn't known in advance -- so instead of a "(N left)" countdown, this just
